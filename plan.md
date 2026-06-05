@@ -7,15 +7,9 @@ This project proposes a structural alternative.
 The central hypothesis is that many stylised housing-market facts emerge from interactions among agents with fundamentally different utility functions, financing structures, constraints and information sets.
 
 The model seeks to explain:
-
-- Credit-driven booms.
-- Yield-driven price floors.
-- Interest-rate sensitivity.
-- Transaction-volume collapses.
-- Tenure transitions.
-- Distributional effects of credit expansion.
-- Institutional entry into housing markets.
+- Credit-condition sensitivity of prices and rents.
 - Shifts in the identity of the marginal pricer.
+- Distributional effects of credit expansion.
 
 Research Question:
 
@@ -102,6 +96,10 @@ There is:
 - no construction,
 - no demolition,
 - no developer sector.
+
+Initial allocation: at least as many houses as agents, initial allocation and pricing etc.
+
+(If someone has sold and loses buy bid -> rental, some may buy another and rent too - interesting point: agents can only interact within neighbourhood so have to ensure consistent - distribution agents within zones, excess unrented, people shoudl be able to move as renters as well if its in their interest.)
 
 ## Spatial Structure
 
@@ -288,7 +286,7 @@ giving institutions a structural funding advantage.
 
 ---
 
-# 7. Expectations and Information
+# 7. Expectations and Information (Limited Vision?)
 
 All agents use adaptive expectations:
 
@@ -472,7 +470,7 @@ Truthful bidding is therefore optimal.
 
 ---
 
-# 12. Rental Market
+# 12. Rental Market (Allow multibids unlike in housing?)
 
 Agents who choose the rent action in Stage 1 of §10 — whether because they cannot buy, choose not to buy, or are landlords listing a property for let — enter the rental market.
 
@@ -598,12 +596,11 @@ Global variables:
 
 1. Generate housing stock and assign properties to zones.
 2. Draw zone quality means $\mu_z$ and property residuals $\nu_k$; compute $q_k = \mu_z + \nu_k$.
-3. Assign tenure according to UK baseline shares from the English Housing Survey: approximately 65% owner-occupied, 20% private rented, 15% social — the social sector is treated as a fixed outside option.
-4. Generate mortgages consistent with the LTV distribution calibrated to FCA Mortgage Product Sales Data.
-5. Generate agent wealth consistent with income decile, drawn from ONS Wealth and Assets Survey conditional distributions.
-6. Assign purchase price anchors $p_0$ to all current owners, initialised at the current property value (updated at each transaction thereafter).
-7. Verify accounting identities.
-8. Initialise expectations.
+3. Generate mortgages consistent with the LTV distribution calibrated to FCA Mortgage Product Sales Data.
+4. Generate agent wealth consistent with income decile, drawn from ONS Wealth and Assets Survey conditional distributions.
+5. Assign purchase price anchors $p_0$ to all current owners, initialised at the current property value (updated at each transaction thereafter).
+6. Verify accounting identities.
+7. Initialise expectations.
 
 Balance sheets are derived from ownership allocations, not generated independently. This ordering enforces accounting consistency: total housing asset value equals the sum of equity and mortgage debt across all agents by construction.
 
@@ -685,14 +682,6 @@ Record:
 
 ## Novel Experiments
 
-### Endogenous Credit Tightening
-
-Macro-induced tightening versus exogenous tightening.
-
-### Risk-Aversion Shock
-
-Increase aggregate risk aversion.
-
 ### Institutional Information Advantage
 
 Remove institutional conditioning on macro state and household leverage. Replace with the same adaptive expectation rule used by private landlords.
@@ -753,7 +742,7 @@ Key question:
 
 ---
 
-# 23. Validation
+# 23. Validation (Necessary?)
 
 The validation framework follows Fagiolo et al. (2019), who organise ABM validation along three dimensions: comparison between simulated and real-world data, calibration and estimation of model parameters, and parameter space exploration. The four layers below operationalise this framework for the present model.
 
