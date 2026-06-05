@@ -807,22 +807,28 @@ This tests not just output patterns but the internal mechanism. A model that mat
 
 # 25. ABM Checklist Compliance
 
-| Requirement | Implementation | Role in emergent outcomes |
-|---|---|---|
-| Discrete agents with clear identities | Four agent classes with distinct state vectors (§4, §16) | Enables heterogeneous valuation distributions to coexist and compete |
-| Internal states changing over time | Wealth, mortgage, equity, expectations, tenure, $p_0$ all evolve each period (§16) | Generates path dependence and wealth accumulation dynamics |
-| Spatial localisation | Zone structure with within-zone quality correlation; consideration sets bounded by zone (§3) | Generates endogenous neighbourhood quality sorting and localised price dynamics |
-| Environmental perception and interaction | Agents observe transaction prices, rents, macro state, and credit conditions; update expectations accordingly (§7) | Expectation heterogeneity produces regime-dependent dynamics and leading/lagging behaviour |
-| Bounded rationality | Adaptive expectations; logit choice at every decision node; zone-bounded search (§5, §7, §10) | Produces momentum, overshooting, and search frictions absent from full-information models |
-| Risk aversion and loss aversion | CRRA utility with heterogeneous $\gamma_i \sim \text{LogNormal}$; prospect-theory loss aversion in seller decisions with anchor $p_0$ (§5, §8) | Risk aversion generates non-participation and deposit-constrained exclusion; loss aversion generates nominal price stickiness and transaction-volume collapse |
-| Learning and adaptation | Adaptive expectation updating each period; consideration set adjusts to feasible set (§7, §10) | Expectation dynamics generate boom-bust cycles without exogenous sentiment shocks |
-| Strategic interaction with game-theoretic structure | Vickrey auctions for both ownership and rental markets; truthful bidding is a dominant strategy (§14) | Prices emerge from valuation competition; no strategic bid-shading required |
-| No central supervisor | Banks are reduced-form; no price-setter or planner; prices emerge from decentralised auctions (§4, §14) | Emergent pricing from decentralised competition is the model's core mechanism |
-| Nontrivial emergent behaviour | Marginal-pricer regime switching, endogenous transaction-volume collapse, wealth distributional divergence across income deciles | These are not imposed — they arise from agent interactions under changing credit conditions |
-| Robust sensitivity analysis | Sobol decomposition with $N = 1024$ Saltelli samples; OFAT for individual parameters (§22, §23) | Establishes which parameters drive variance in prices and rents; falsifies or confirms credit-dominance hypothesis |
+| Requirement                                         | Implementation                                                                                                                                 | Role in emergent outcomes                                                                                                                                     |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discrete agents with clear identities               | Four agent classes with distinct state vectors (§4, §16)                                                                                       | Enables heterogeneous valuation distributions to coexist and compete                                                                                          |
+| Internal states changing over time                  | Wealth, mortgage, equity, expectations, tenure, $p_0$ all evolve each period (§16)                                                             | Generates path dependence and wealth accumulation dynamics                                                                                                    |
+| Spatial localisation                                | Zone structure with within-zone quality correlation; consideration sets bounded by zone (§3)                                                   | Generates endogenous neighbourhood quality sorting and localised price dynamics                                                                               |
+| Environmental perception and interaction            | Agents observe transaction prices, rents, macro state, and credit conditions; update expectations accordingly (§7)                             | Expectation heterogeneity produces regime-dependent dynamics and leading/lagging behaviour                                                                    |
+| Bounded rationality                                 | Adaptive expectations; logit choice at every decision node; zone-bounded search (§5, §7, §10)                                                  | Produces momentum, overshooting, and search frictions absent from full-information models                                                                     |
+| Risk aversion and loss aversion                     | CRRA utility with heterogeneous $\gamma_i \sim \text{LogNormal}$; prospect-theory loss aversion in seller decisions with anchor $p_0$ (§5, §8) | Risk aversion generates non-participation and deposit-constrained exclusion; loss aversion generates nominal price stickiness and transaction-volume collapse |
+| Learning and adaptation                             | Adaptive expectation updating each period; consideration set adjusts to feasible set (§7, §10)                                                 | Expectation dynamics generate boom-bust cycles without exogenous sentiment shocks                                                                             |
+| Strategic interaction with game-theoretic structure | Vickrey auctions for both ownership and rental markets; truthful bidding is a dominant strategy (§14)                                          | Prices emerge from valuation competition; no strategic bid-shading required                                                                                   |
+| No central supervisor                               | Banks are reduced-form; no price-setter or planner; prices emerge from decentralised auctions (§4, §14)                                        | Emergent pricing from decentralised competition is the model's core mechanism                                                                                 |
+| Nontrivial emergent behaviour                       | Marginal-pricer regime switching, endogenous transaction-volume collapse, wealth distributional divergence across income deciles               | These are not imposed — they arise from agent interactions under changing credit conditions                                                                   |
+| Robust sensitivity analysis                         | Sobol decomposition with $N = 1024$ Saltelli samples; OFAT for individual parameters (§22, §23)                                                | Establishes which parameters drive variance in prices and rents; falsifies or confirms credit-dominance hypothesis                                            |
 
 ---
 
 # 26. Central Contribution
 
 The central contribution is the proposition that housing-market dynamics can be understood as shifts in the identity of the marginal pricer. Rather than treating prices as the outcome of a representative agent or a collection of behavioural heuristics, the model explains housing cycles as the result of interactions among groups with different utility functions, financing structures and information sets. Credit conditions matter because they change which group is capable of setting prices at the margin.
+
+---
+
+# 27. PS
+
+Another interesting question is, in the absence of shocks: what is the equilibrium wealth distribution across agent types and income deciles? Do the rich get richer, or is there a stable distribution? How does this depend on credit conditions?
