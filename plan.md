@@ -97,9 +97,6 @@ There is:
 - no demolition,
 - no developer sector.
 
-Initial allocation: at least as many houses as agents, initial allocation and pricing etc.
-
-(If someone has sold and loses buy bid -> rental, some may buy another and rent too - interesting point: agents can only interact within neighbourhood so have to ensure consistent - distribution agents within zones, excess unrented, people shoudl be able to move as renters as well if its in their interest.)
 
 ## Spatial Structure
 
@@ -286,7 +283,7 @@ giving institutions a structural funding advantage.
 
 ---
 
-# 7. Expectations and Information (Limited Vision?)
+# 7. Expectations and Information
 
 All agents use adaptive expectations:
 
@@ -470,7 +467,7 @@ Truthful bidding is therefore optimal.
 
 ---
 
-# 12. Rental Market (Allow multibids unlike in housing?)
+# 12. Rental Market
 
 Agents who choose the rent action in Stage 1 of §10 — whether because they cannot buy, choose not to buy, or are landlords listing a property for let — enter the rental market.
 
