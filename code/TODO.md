@@ -2,7 +2,7 @@
 
 ## General
 1. ~~Create a config file to store all parameters and initialisation settings, and pass this to all functions that need it.~~ ✅ Done: Moved all settings to config.toml . Now config.py loads these into an immutable Config object and passes them safely to the model, agents and run functions. If you can't find a parameter, check config.py to see if its name was changed in the code.
-2. Add a requirements file.
+~~Add a requirements file~~. ✅ Done: generated requirements.txt as a fallback (uv remains the recommended setup).
 3. Build visualisations for all the things we're interested in, including the spatial distribution of properties and agents, the evolution of prices and rents over time, and the distribution of wealth across agent types and income deciles.
 4. Implement risk and loss aversion properly.
 5. Consider adding limited vision to the model, where non-institutionals can only see a subset of the market (e.g. properties in their own and adjacent zones) when making decisions.
