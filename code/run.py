@@ -38,7 +38,11 @@ def run_simulation(config=None, n_steps=None, verbose=True):
     print(f"  Households:   {cfg.sim.n_households}")
     print(f"  Institutions: {cfg.sim.n_institutions}")
     print(f"  Properties:   {cfg.sim.n_properties}")
-    print(f"  Zones:        {cfg.sim.n_zones}")
+    print(
+        f"  Zones:        {cfg.spatial.n_zones} "
+        f"({cfg.spatial.grid_rows}x{cfg.spatial.grid_cols} torus)"
+    )
+    print(f"  Tenure init:  {cfg.sim.ownership_mode}")
     print(f"  Seed:         {cfg.sim.seed}")
     print("=" * 60)
 

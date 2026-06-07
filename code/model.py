@@ -16,21 +16,34 @@ Orchestrates the minimum economic loop each step:
   → expectation update
 
 Spatial structure:
-  Z zones in a RING (toroidal 1-D) topology.
-  Each zone has floor(n_properties / n_zones) + overflow properties,
-  ensuring every zone has enough stock for its resident agents.
-  Agents search their home zone + adjacent zones only.
+  Z = grid_rows x grid_cols zones on a 2D TOROIDAL grid (config [spatial]).
+  Each agent's consideration set = its own zone + the 4 von Neumann neighbours
+  (up/down/left/right), wrapping around the torus edges, so every agent faces a
+  symmetric 5-zone search space with no edge effects. Properties are distributed
+  as evenly as possible across zones. (See config.toml [spatial] for why the
+  default is a 4x4 torus rather than plan.md's nominal Z=10.)
 
-Initialisation:
-  1. Generate housing stock: properties distributed evenly across zones.
-     Each zone guaranteed >= ceil(n_households / n_zones) * 1.3 properties.
-  2. Draw agent incomes from log-normal; sort ascending.
-  3. Sort properties by quality ascending.
-  4. Match households to properties income-rank to quality-rank (richer
-     households get better properties); verify deposit feasibility.
-  5. Bottom ~35% of households initialised as renters entering rental market.
-  6. Institutions allocated a separate tranche of properties.
-  7. Set estimated_value = purchase_anchor_price at init.
+Initialisation (plan.md §17-18 — balance sheets DERIVED from allocations so the
+accounting identity HousingAssets = HousingEquity + MortgageDebt holds by
+construction):
+  1. Generate housing stock; quality q_k = mu_z + nu_k, standardised; price
+     anchor = base_price + price_sensitivity * q_k (base_price is a CALIBRATED
+     market anchor, not arbitrary).
+  2. Draw households: income (log-normal), TOTAL WEALTH (multiple of income),
+     risk aversion (log-normal).
+  3. Match income-ranked households to quality-ranked properties (richer get
+     better). Draw an origination LTV per owner (capped at credit.ltv_limit).
+     Derive: deposit = (1-LTV)*price = equity; mortgage = LTV*price;
+     liquid cash = wealth - deposit.
+  4. ownership_mode = "emergent" (default): a household owns only if it can
+     afford the deposit AND meets the income (DTI) test; otherwise it becomes a
+     renter, so the ownership rate EMERGES. ownership_mode = "target"
+     (DIAGNOSTIC): force target_ownership_rate by making the wealthiest
+     households owners, topping up cash if short so sheets stay feasible.
+  5. Private landlords at t=0: a share of owners receive extra (let-out)
+     properties with right-skewed portfolio sizes (plan §17).
+  6. Institutions allocated a separate tranche of properties as rental stock.
+  7. Remaining renters placed into available rental stock.
   8. Seed price and rent history from initial allocations.
 """
 
@@ -74,7 +87,9 @@ class HousingModel(mesa.Model):
 
         self.n_households = cfg.sim.n_households
         self.n_institutions = cfg.sim.n_institutions
-        self.n_zones = cfg.sim.n_zones
+        self.grid_rows = cfg.spatial.grid_rows
+        self.grid_cols = cfg.spatial.grid_cols
+        self.n_zones = cfg.spatial.n_zones
         self.target_ownership_rate = cfg.sim.target_ownership_rate
 
         self.policy = policy if policy is not None else NoPolicy()
@@ -86,11 +101,11 @@ class HousingModel(mesa.Model):
             loan_term_years=cfg.credit.loan_term_years,
         )
 
-        # Spatial adjacency — ring topology
-        self._zone_adjacency = self._build_zone_adjacency(cfg.sim.n_zones)
+        # Spatial adjacency — 2D von Neumann torus
+        self._zone_adjacency = self._build_zone_adjacency(self.grid_rows, self.grid_cols)
 
         # Housing stock (guaranteed zone distribution)
-        self.properties = self._init_properties(cfg.sim.n_properties, cfg.sim.n_zones)
+        self.properties = self._init_properties(cfg.sim.n_properties, self.n_zones)
         self._property_map = {p.id: p for p in self.properties}
 
         # Agents
@@ -122,15 +137,37 @@ class HousingModel(mesa.Model):
     # Spatial structure
     # ------------------------------------------------------------------
 
-    def _build_zone_adjacency(self, n_zones):
+    def _build_zone_adjacency(self, rows, cols):
         """
-        Ring topology: zone z neighbours (z-1) and (z+1) mod n_zones.
-        Returns dict zone -> frozenset of searchable zones (self + neighbours).
+        2D toroidal grid, von Neumann (4-neighbour) topology.
+
+        Zone z maps to grid cell (row, col) = (z // cols, z % cols). Its
+        searchable set is itself plus the 4 orthogonal neighbours, with row/col
+        indices wrapped modulo rows/cols (the torus). With rows, cols >= 3 the
+        four neighbours are always distinct from each other and from self, so
+        every zone has exactly five searchable zones — a symmetric consideration
+        set with no edge effects.
+
+        Returns dict zone -> frozenset of searchable zones.
         """
-        return {
-            z: frozenset({z, (z - 1) % n_zones, (z + 1) % n_zones})
-            for z in range(n_zones)
-        }
+
+        def zid(r, c):
+            return (r % rows) * cols + (c % cols)
+
+        adjacency = {}
+        for r in range(rows):
+            for c in range(cols):
+                z = zid(r, c)
+                adjacency[z] = frozenset(
+                    {
+                        z,
+                        zid(r - 1, c),  # up
+                        zid(r + 1, c),  # down
+                        zid(r, c - 1),  # left
+                        zid(r, c + 1),  # right
+                    }
+                )
+        return adjacency
 
     def get_search_zones(self, home_zone):
         return self._zone_adjacency[home_zone]
@@ -194,10 +231,14 @@ class HousingModel(mesa.Model):
         """
         Create agents with heterogeneous attributes.
 
-        Households: income ~ LogNormal(log(35000), 0.5), UK-inspired.
-                    cash ~ Uniform(0.5, 2.0) * income.
-                    risk_aversion ~ LogNormal(0, 0.5).
-                    home_zone assigned proportionally across zones.
+        Households: income       ~ LogNormal(log(income_median), income_sigma).
+                    total wealth  ~ Uniform(wealth_income_mult_low, _high)*income.
+                                    NOTE: `cash` initially holds TOTAL wealth; the
+                                    deposit on any property owned at init is later
+                                    subtracted in _init_ownership_and_tenure,
+                                    leaving cash = liquid wealth (plan §17).
+                    risk_aversion ~ LogNormal(risk_aversion_mu, _sigma).
+                    home_zone assigned evenly across zones.
 
         Institutions: cash-rich, low funding rate.
         """
@@ -205,7 +246,9 @@ class HousingModel(mesa.Model):
         incomes = self.rng.lognormal(
             np.log(acfg.income_median), acfg.income_sigma, n_households
         )
-        cash_mult = self.rng.uniform(acfg.cash_mult_low, acfg.cash_mult_high, n_households)
+        wealth_mult = self.rng.uniform(
+            acfg.wealth_income_mult_low, acfg.wealth_income_mult_high, n_households
+        )
         risk_av = self.rng.lognormal(
             acfg.risk_aversion_mu, acfg.risk_aversion_sigma, n_households
         )
@@ -216,7 +259,7 @@ class HousingModel(mesa.Model):
                 unique_id=i,
                 model=self,
                 income=float(incomes[i]),
-                cash=float(incomes[i] * cash_mult[i]),
+                cash=float(incomes[i] * wealth_mult[i]),  # total wealth (see note)
                 risk_aversion=float(risk_av[i]),
                 home_zone=zone,
             )
@@ -235,26 +278,86 @@ class HousingModel(mesa.Model):
                 home_zone=zone,
             )
 
+    def _draw_origination_ltv(self):
+        """Draw an origination LTV from the configured distribution, capped at
+        the regulatory ceiling (plan §17 / FCA MPSD)."""
+        ai = self.config.agent_init
+        return min(
+            self.credit.ltv_limit,
+            float(self.rng.uniform(ai.ltv_dist_low, ai.ltv_dist_high)),
+        )
+
+    def _assign_property_to_owner(self, hh, prop, is_home, allow_topup):
+        """
+        Acquire `prop` for household `hh` at init and DERIVE the balance sheet so
+        the accounting identity holds by construction (plan §17-18):
+            deposit = (1 - LTV) * price  == equity at origination
+            mortgage = LTV * price
+            liquid cash = wealth - deposit
+
+        Deposit-constrained households max out leverage (smallest deposit).
+        Feasibility:
+          - emergent mode: returns False if the deposit or the DTI/income test
+            fails (household stays a renter; property left in the pool).
+          - target mode (allow_topup=True): forces ownership, injecting cash to
+            cover the deposit if short (diagnostic only) so liquid >= 0.
+        Returns True iff the property was assigned.
+        """
+        price = prop.estimated_value
+        ltv = self._draw_origination_ltv()
+        deposit = price * (1.0 - ltv)
+
+        # Deposit-constrained borrowers take the maximum allowed leverage.
+        if hh.cash < deposit and self.credit.ltv_limit > ltv:
+            ltv = self.credit.ltv_limit
+            deposit = price * (1.0 - ltv)
+
+        # Income (DTI) feasibility.
+        payment = self.credit.annual_mortgage_payment(price, ltv)
+        income_ok = payment <= self.credit.dti_limit * hh.income
+        if not income_ok and not allow_topup:
+            return False
+
+        if hh.cash < deposit:
+            if not allow_topup:
+                return False
+            hh.cash = deposit  # diagnostic top-up (target mode): liquid -> 0
+
+        # Commit.
+        hh.cash -= deposit
+        hh.owned_properties.add(prop.id)
+        hh._mortgages[prop.id] = (price, ltv, 0)  # (purchase_price, ltv, steps_held)
+        hh._housing_asset_value += price
+        prop.owner_id = hh.unique_id
+        if is_home:
+            hh.home_property = prop.id
+            prop.occupant_id = hh.unique_id
+        else:
+            prop.listed_for_rent = True  # let-out (landlord) property
+        return True
+
     def _init_ownership_and_tenure(self):
         """
-        Allocate properties to agents consistently with income rank.
+        Allocate properties and DERIVE balance sheets (plan §17-18).
 
-        Strategy:
-          1. Sort households by income descending (richer get better properties).
-          2. Sort properties by quality descending.
-          3. Top target_ownership_rate fraction of households become owners.
-             Each is matched to a property in their home zone if possible,
-             falling back to any available property.
-          4. Check deposit feasibility; if not feasible, agent becomes renter.
-          5. Remaining properties: bottom tranche to institutions as rental stock,
-             rest remain unowned (available rental/purchase pool).
-          6. Renters are placed in institutional or unowned properties.
-
-        Balance sheets:
-          - Owner's cash reduced by deposit (price * (1 - LTV)).
-          - Owner's _housing_asset_value set to estimated_value.
-          - Mortgage record created.
+        1. Sort households by income desc, properties by quality desc, and match
+           rank-to-rank (richer get better) for the top target_ownership_rate.
+        2. ownership_mode = "emergent" (default): each match owns only if it
+           clears the deposit AND DTI tests at its drawn LTV — so the ownership
+           rate EMERGES (it is NOT pinned to the target; see TODO Model #4).
+           ownership_mode = "target" (DIAGNOSTIC): force the target rate by
+           topping up cash where needed so sheets stay feasible.
+        3. Private landlords at t=0: the wealthiest `landlord_share` of owners
+           receive extra let-out properties, portfolio size right-skewed
+           (Geometric), subject to the same feasibility rules.
+        4. Institutions take a tranche of remaining stock as rental supply.
+        5. Remaining renters placed into available rental stock.
+        6. Accounting identity verified.
         """
+        cfg = self.config
+        mode = cfg.sim.ownership_mode
+        allow_topup = mode == "target"
+
         households = sorted(
             [a for a in self.agents if isinstance(a, HouseholdAgent)],
             key=lambda h: h.income,
@@ -264,44 +367,43 @@ class HousingModel(mesa.Model):
 
         # Properties sorted best-to-worst
         props_sorted = sorted(self.properties, key=lambda p: p.quality, reverse=True)
+        available = list(props_sorted)
 
         n_owners_target = int(self.target_ownership_rate * len(households))
-        n_inst_target = int(
-            self.config.sim.inst_ownership_share * len(self.properties)
-        )
+        n_inst_target = int(cfg.sim.inst_ownership_share * len(self.properties))
 
-        # --- Allocate ownership ---
-        available = list(props_sorted)
-        owner_idx = 0
-        actual_owners = 0
-
+        # --- 1-2. Primary (owner-occupier) allocation ---
         for hh in households[:n_owners_target]:
             if not available:
                 break
-            # Prefer a property in hh's home zone
+            # Prefer a property in hh's home zone, else the best available.
             zone_match = [p for p in available if p.zone == hh.home_zone]
             prop = zone_match[0] if zone_match else available[0]
-            available.remove(prop)
+            if self._assign_property_to_owner(hh, prop, is_home=True, allow_topup=allow_topup):
+                available.remove(prop)
+            # else: emergent infeasible -> hh stays renter, prop stays in pool
 
-            # Check deposit feasibility at this property's price
-            if not self.credit.is_feasible(prop.estimated_value, hh.cash, hh.income):
-                # Income-rank says this household should own, but can't afford
-                # at this property price. Put them in rental pool instead.
-                available.insert(0, prop)  # return property to pool
-                continue
+        # --- 3. Private landlords at t=0 (right-skewed extra portfolios) ---
+        ai = cfg.agent_init
+        owners = [h for h in households if h.owned_properties]
+        n_landlords = int(ai.landlord_share * len(owners))
+        landlords = sorted(owners, key=lambda h: h.cash, reverse=True)[:n_landlords]
+        for ll in landlords:
+            extra = int(self.rng.geometric(ai.landlord_portfolio_geom_p))  # >= 1
+            for _ in range(extra):
+                if not available:
+                    break
+                zones = self.get_search_zones(ll.home_zone)
+                zone_match = [p for p in available if p.zone in zones]
+                prop = zone_match[0] if zone_match else available[0]
+                if self._assign_property_to_owner(
+                    ll, prop, is_home=False, allow_topup=allow_topup
+                ):
+                    available.remove(prop)
+                else:
+                    break  # can't afford more rentals; stop extending this LL
 
-            deposit = prop.estimated_value * (1.0 - self.credit.ltv_limit)
-            hh.cash -= deposit
-            hh.owned_properties.add(prop.id)
-            hh.home_property = prop.id
-            hh._mortgages[prop.id] = (prop.estimated_value, self.credit.ltv_limit, 0)
-            hh._housing_asset_value = prop.estimated_value
-            prop.owner_id = hh.unique_id
-            prop.occupant_id = hh.unique_id
-            actual_owners += 1
-
-        # --- Allocate institutional stock ---
-        # Take from the remaining available pool (lower quality / unmatched)
+        # --- 4. Institutional stock (rental supply) ---
         inst_stock = available[:n_inst_target]
         for k, prop in enumerate(inst_stock):
             available.remove(prop)
@@ -309,11 +411,9 @@ class HousingModel(mesa.Model):
             prop.owner_id = inst.unique_id
             inst.portfolio.add(prop.id)
             inst._housing_asset_value += prop.estimated_value
-            prop.listed_for_rent = True  # immediately available to rent
+            prop.listed_for_rent = True
 
-        # --- Place renters into rental stock ---
-        # Renters are all households without a home yet.
-        # They go into institutional and unowned vacant properties.
+        # --- 5. Place renters into rental stock ---
         rental_pool = [
             p for p in self.properties if p.occupant_id is None and p.listed_for_rent
         ]
@@ -334,6 +434,37 @@ class HousingModel(mesa.Model):
             prop.listed_for_rent = False
             hh.home_property = prop.id
             hh.home_zone = prop.zone
+
+        # --- 6. Verify accounting identity (plan §18) ---
+        self._verify_accounting()
+
+    def _verify_accounting(self, tol=1.0):
+        """
+        Assert the housing balance sheet is internally consistent at init:
+          - total HousingAssets from properties == sum of agent housing-asset
+            values (no double-counting / orphaned ownership), and
+          - total mortgage debt does not exceed housing assets.
+        HousingEquity is then HousingAssets - MortgageDebt by definition, so
+        HousingAssets = HousingEquity + MortgageDebt holds by construction.
+        """
+        props_assets = sum(
+            p.estimated_value for p in self.properties if p.owner_id is not None
+        )
+        agent_assets = sum(
+            getattr(a, "_housing_asset_value", 0.0) for a in self.agents
+        )
+        assert abs(props_assets - agent_assets) <= tol, (
+            f"Housing assets mismatch: properties={props_assets:.2f} "
+            f"agents={agent_assets:.2f}"
+        )
+
+        debt = 0.0
+        for a in self.agents:
+            for orig, ltv, held in getattr(a, "_mortgages", {}).values():
+                debt += self.credit.outstanding_principal(orig, ltv, held)
+        assert debt <= props_assets + tol, (
+            f"Mortgage debt {debt:.2f} exceeds housing assets {props_assets:.2f}"
+        )
 
     def _seed_price_history(self):
         """Seed price history from initial property values."""
