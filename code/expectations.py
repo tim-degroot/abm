@@ -16,6 +16,11 @@ replace the entire expectation system without touching agent code.
 import numpy as np
 
 
+# NOTE: These are standalone fallback defaults only. In a running model the
+# canonical values come from config.toml (expectations.delta, init_price_growth,
+# init_rent_growth) and are passed in explicitly by the agents. Keep them in
+# sync with config.toml if you change them.
+
 # Default smoothing parameter: higher = more inertia
 DEFAULT_DELTA = 0.7
 

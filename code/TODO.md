@@ -1,8 +1,8 @@
 # TODO
 
 ## General
-1. Create a config file to store all parameters and initialisation settings, and pass this to all functions that need it. This will make it easier to keep track of assumptions and ensure consistency across the codebase.
-2. Add a requirements file.
+1. ~~Create a config file to store all parameters and initialisation settings, and pass this to all functions that need it.~~ ✅ Done: Moved all settings to config.toml . Now config.py loads these into an immutable Config object and passes them safely to the model, agents and run functions. If you can't find a parameter, check config.py to see if its name was changed in the code.
+~~Add a requirements file~~. ✅ Done: generated requirements.txt as a fallback (uv remains the recommended setup).
 3. Build visualisations for all the things we're interested in, including the spatial distribution of properties and agents, the evolution of prices and rents over time, and the distribution of wealth across agent types and income deciles.
 4. Implement risk and loss aversion properly.
 5. Consider adding limited vision to the model, where non-institutionals can only see a subset of the market (e.g. properties in their own and adjacent zones) when making decisions.
@@ -35,8 +35,10 @@
 1. Review whether all the things we're interested in are actually being recorded here.
 
 ## Model
-1. Correct the spatial structure, it should be a 2D grid (toroidal) and the allocation of properties to zones does not follow what we laid out in the plan.
-2. The initialization rules are also completely ad hoc and need to be revised following the plan.
+1. ~~Correct the spatial structure, it should be a 2D grid (toroidal).~~ ✅ Done: replaced the 1-D ring with a 2D von Neumann torus (`grid_rows`×`grid_cols` in config [spatial], default 4×4 = Z=16). Original plan's Z=10 can't form a non-degenerate torus — 2×5 collapses. See config.toml [spatial].)
+2. ~~The initialization rules are ad hoc and need revising following the plan.~~ ✅ Done. Agent initialization now follows plan §17-18: wealth and origination LTV are drawn from configured distributions; deposit, mortgage, and liquid cash are derived from those two numbers so HousingAssets = HousingEquity + MortgageDebt holds by construction (checked via _verify_accounting). Ownership emerges from who can afford a deposit; a fraction of owners are seeded as landlords with right-skewed portfolios. 
+3. (Spatial) Consider adding spatial **quality clustering**: make zone quality means `mu_z` spatially autocorrelated on the torus (good/bad neighbourhoods cluster) instead of iid. Gate behind a `quality_clustering` true/false config flag.
+4. (Calibration debt) With the chosen init strategy (fix price + wealth + LTV, let ownership **emerge**), the ~65% owner-occupancy rate (plan §19/§23) is an *output*, not guaranteed. TODO: Calibrate the wealth-distribution parameters so emergent ownership lands near 65%. The diagnostic `sim.ownership_mode = "emergent" | "target"` flag is implemented: `"target"` forces 65% at t=0 (feasible sheets, cash topped up if short) to isolate whether faults live in the wealth distribution vs the market rules. Never report target-mode runs as results.
 
 ## Policies
 

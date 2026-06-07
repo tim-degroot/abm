@@ -38,20 +38,14 @@ import mesa
 from expectations import adaptive_update, init_price_expectation, init_rent_expectation
 from valuation import (
     household_wtp,
-    institution_wtp,
+    investor_wtp,
     household_max_rent,
     estimate_market_rent,
-    renter_outside_option,
 )
 
-# Logit temperature parameters
-BETA_ACTION = 1.0
-BETA_PROPERTY = 0.5
-
-# Income mean-reversion speed (per period)
-INCOME_REVERSION = 0.05
-# Income shock volatility (log scale)
-INCOME_SHOCK_SD = 0.05
+# All tunable parameters now live in config.py / config.toml and are read via
+# self.model.config (e.g. self.model.config.agent.beta_action). Nothing tunable
+# is hardcoded in this module.
 
 
 def _logit_probs(scores):
@@ -112,15 +106,16 @@ class HouseholdAgent(mesa.Agent):
         self.owned_properties = set()
         self.home_property = None  # where agent lives (owned OR rented), or None
 
+        ecfg = self.model.config.expectations
         self.expected_price_growth = (
             expected_price_growth
             if expected_price_growth is not None
-            else init_price_expectation()
+            else init_price_expectation(ecfg.init_price_growth)
         )
         self.expected_rent_growth = (
             expected_rent_growth
             if expected_rent_growth is not None
-            else init_rent_expectation()
+            else init_rent_expectation(ecfg.init_rent_growth)
         )
 
         # Mortgage tracking: prop_id -> (purchase_price, ltv_at_origination, steps_held)
@@ -192,6 +187,7 @@ class HouseholdAgent(mesa.Agent):
         Returns one of: 'buy', 'rent', 'hold', 'sell', 'rent_out'
         """
         credit = self.model.credit
+        acfg = self.model.config.agent
         scores = []
 
         # BUY — only if credit-feasible candidates exist
@@ -204,26 +200,28 @@ class HouseholdAgent(mesa.Agent):
             best_wtp = max(
                 self._wtp_for_property(p, avg_market_rent, credit) for p in affordable
             )
-            scores.append(("buy", BETA_ACTION * best_wtp))
+            scores.append(("buy", acfg.beta_action * best_wtp))
         else:
             scores.append(("buy", -np.inf))
 
         # RENT — always available; scored by rent burden
         monthly_burden = avg_market_rent / max(self.income / 12.0, 1.0)
-        rent_score = BETA_ACTION * (-monthly_burden)
+        rent_score = acfg.beta_action * (-monthly_burden)
         scores.append(("rent", rent_score))
 
         # HOLD / SELL / RENT_OUT — only for owners
         if self.owned_properties:
-            hold_score = BETA_ACTION * self.expected_price_growth
+            hold_score = acfg.beta_action * self.expected_price_growth
             scores.append(("hold", hold_score))
 
-            sell_score = BETA_ACTION * (-self.expected_price_growth + 0.02)
+            sell_score = acfg.beta_action * (
+                -self.expected_price_growth + acfg.sell_score_offset
+            )
             scores.append(("sell", sell_score))
 
         # RENT_OUT home — only if owner-occupier (move out, become renter+landlord)
         if self.is_owner_occupier:
-            rent_out_score = BETA_ACTION * (
+            rent_out_score = acfg.beta_action * (
                 avg_market_rent
                 * 12
                 / max(self.model._property_map[self.home_property].estimated_value, 1.0)
@@ -244,8 +242,9 @@ class HouseholdAgent(mesa.Agent):
         if not candidates:
             return None
         credit = self.model.credit
+        beta_property = self.model.config.agent.beta_property
         scores = [
-            (p, BETA_PROPERTY * self._wtp_for_property(p, avg_market_rent, credit))
+            (p, beta_property * self._wtp_for_property(p, avg_market_rent, credit))
             for p in candidates
         ]
         probs = _logit_probs(scores)
@@ -256,8 +255,9 @@ class HouseholdAgent(mesa.Agent):
         """Select among available rentals. Prefers lower rent relative to income."""
         if not rental_candidates:
             return None
+        beta_property = self.model.config.agent.beta_property
         scores = [
-            (p, BETA_PROPERTY * (-p.estimated_value / max(self.income / 12.0, 1.0)))
+            (p, beta_property * (-p.estimated_value / max(self.income / 12.0, 1.0)))
             for p in rental_candidates
         ]
         probs = _logit_probs(scores)
@@ -274,7 +274,9 @@ class HouseholdAgent(mesa.Agent):
 
     def compute_rent_bid(self):
         """Maximum monthly rent bid (affordability ceiling)."""
-        return household_max_rent(self.income)
+        return household_max_rent(
+            self.income, self.model.config.valuation.rent_income_fraction
+        )
 
     # ------------------------------------------------------------------
     # Balance sheet updates
@@ -383,11 +385,12 @@ class HouseholdAgent(mesa.Agent):
         one whose income falls may need to downsize or fall behind
         on mortgage payments.
         """
-        shock = self.model.rng.normal(0.0, INCOME_SHOCK_SD)
+        acfg = self.model.config.agent
+        shock = self.model.rng.normal(0.0, acfg.income_shock_sd)
         log_income = np.log(max(self.income, 1.0))
         log_baseline = np.log(max(self.baseline_income, 1.0))
         log_income_new = (
-            log_income + INCOME_REVERSION * (log_baseline - log_income) + shock
+            log_income + acfg.income_reversion * (log_baseline - log_income) + shock
         )
         self.income = float(np.exp(log_income_new))
 
@@ -396,7 +399,7 @@ class HouseholdAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def update_expectations(self, price_signal, rent_signal, delta=None):
-        d = delta if delta is not None else 0.7
+        d = delta if delta is not None else self.model.config.expectations.delta
         self.expected_price_growth = adaptive_update(
             self.expected_price_growth, price_signal, d
         )
@@ -409,15 +412,37 @@ class HouseholdAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def _wtp_for_property(self, prop, avg_market_rent, credit):
-        outside_opt = renter_outside_option(avg_market_rent, self.income)
-        credit_ceil = credit.max_affordable_price(self.cash, self.income)
+        cfg = self.model.config
+        # Exogenous expected capital gain (£), based on the property's current value.
+        capital_gain = self.expected_price_growth * prop.estimated_value
+        annual_rent = (
+            estimate_market_rent(
+                prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
+            )
+            * 12.0
+        )
+
+        if self.is_owner_occupier:
+            # Already housed → an extra purchase is buy-to-let (landlord, plan §11).
+            net_rent = annual_rent * (1.0 - cfg.valuation.operating_cost_fraction)
+            wtp = investor_wtp(
+                net_rent, capital_gain, cfg.credit.btl_funding_rate, cfg.credit.btl_ltv
+            )
+            # Private landlords are still credit-constrained (unlike institutions).
+            return min(wtp, credit.max_affordable_price(self.cash, self.income))
+
+        # Owner-occupier purchase: value = quality consumption + capital gain.
+        quality_value = cfg.valuation.quality_value_scale * annual_rent
+        # Outside option = 0 for now: we don't yet model a net advantage of renting
+        # over owning (or vice versa). Set this if we want to model that later.
+        outside_option = 0.0
         return household_wtp(
-            quality=prop.quality,
-            expected_price_growth=self.expected_price_growth,
-            mortgage_rate=credit.mortgage_rate,
-            ltv=credit.ltv_limit,
-            outside_option_value=outside_opt,
-            credit_ceiling=credit_ceil,
+            quality_value,
+            capital_gain,
+            outside_option,
+            credit.mortgage_rate,
+            credit.ltv_limit,
+            credit.max_affordable_price(self.cash, self.income),
         )
 
     def step(self):
@@ -456,15 +481,16 @@ class InstitutionalAgent(mesa.Agent):
 
         self.portfolio = set()
 
+        ecfg = self.model.config.expectations
         self.expected_price_growth = (
             expected_price_growth
             if expected_price_growth is not None
-            else init_price_expectation()
+            else init_price_expectation(ecfg.init_price_growth)
         )
         self.expected_rent_growth = (
             expected_rent_growth
             if expected_rent_growth is not None
-            else init_rent_expectation()
+            else init_rent_expectation(ecfg.init_rent_growth)
         )
 
         self._housing_asset_value = 0.0
@@ -478,18 +504,25 @@ class InstitutionalAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def choose_action(self, purchase_candidates, avg_rent):
+        acfg = self.model.config.agent
         scores = []
 
         if purchase_candidates:
             best_wtp = max(
                 self._wtp_for_property(p, avg_rent) for p in purchase_candidates
             )
-            scores.append(("buy", BETA_ACTION * best_wtp))
+            scores.append(("buy", acfg.beta_action * best_wtp))
         else:
             scores.append(("buy", -np.inf))
 
-        scores.append(("hold", BETA_ACTION * self.expected_price_growth))
-        scores.append(("sell", BETA_ACTION * (-self.expected_price_growth + 0.01)))
+        scores.append(("hold", acfg.beta_action * self.expected_price_growth))
+        scores.append(
+            (
+                "sell",
+                acfg.beta_action
+                * (-self.expected_price_growth + acfg.inst_sell_score_offset),
+            )
+        )
 
         probs = _logit_probs(scores)
         actions, weights = zip(*probs)
@@ -502,8 +535,9 @@ class InstitutionalAgent(mesa.Agent):
     def choose_property(self, candidates, avg_rent):
         if not candidates:
             return None
+        beta_property = self.model.config.agent.beta_property
         scores = [
-            (p, BETA_PROPERTY * self._wtp_for_property(p, avg_rent)) for p in candidates
+            (p, beta_property * self._wtp_for_property(p, avg_rent)) for p in candidates
         ]
         probs = _logit_probs(scores)
         props, weights = zip(*probs)
@@ -540,7 +574,7 @@ class InstitutionalAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def update_expectations(self, price_signal, rent_signal, delta=None):
-        d = delta if delta is not None else 0.7
+        d = delta if delta is not None else self.model.config.expectations.delta
         self.expected_price_growth = adaptive_update(
             self.expected_price_growth, price_signal, d
         )
@@ -553,14 +587,14 @@ class InstitutionalAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def _wtp_for_property(self, prop, avg_rent):
-        expected_rent = estimate_market_rent(prop.quality, avg_rent)
-        return institution_wtp(
-            expected_rent=expected_rent * 12,
-            operating_cost_fraction=0.15,
-            expected_price_growth=self.expected_price_growth,
-            funding_rate=self.funding_rate,
-            ltv=0.60,
+        cfg = self.model.config
+        capital_gain = self.expected_price_growth * prop.estimated_value
+        net_rent = (
+            estimate_market_rent(prop.quality, avg_rent, cfg.valuation.quality_sensitivity)
+            * 12.0
+            * (1.0 - cfg.valuation.operating_cost_fraction)
         )
+        return investor_wtp(net_rent, capital_gain, self.funding_rate, cfg.agent.inst_ltv)
 
     def step(self):
         pass
