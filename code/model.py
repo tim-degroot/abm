@@ -38,6 +38,7 @@ import numpy as np
 import mesa
 from mesa.datacollection import DataCollector
 
+from config import Config, load_config
 from properties import Property
 from agents import HouseholdAgent, InstitutionalAgent
 from credit import CreditEnvironment
@@ -53,60 +54,47 @@ class HousingModel(mesa.Model):
 
     Parameters
     ----------
-    n_households : int
-        Number of household agents.
-    n_institutions : int
-        Number of institutional investor agents.
-    n_properties : int
-        Total housing stock (must be > n_households to guarantee supply).
-    n_zones : int
-        Number of spatial zones (ring topology).
-    target_ownership_rate : float
-        Fraction of households initialised as owners (~0.65).
-    seed : int or None
-        Random seed.
+    config : Config, optional
+        Immutable parameter container (see config.py). Defaults to the bundled
+        config.toml via load_config(). This is the single source of truth for
+        every parameter and initialisation setting.
     policy : policy object, optional
         Defaults to NoPolicy.
-    credit_params : dict, optional
-        Overrides for CreditEnvironment.
     """
 
-    def __init__(
-        self,
-        n_households=100,
-        n_institutions=5,
-        n_properties=130,
-        n_zones=10,
-        target_ownership_rate=0.65,
-        seed=42,
-        policy=None,
-        credit_params=None,
-    ):
-        super().__init__(seed=seed)
+    def __init__(self, config=None, policy=None):
+        self.config = config if config is not None else load_config()
+        cfg = self.config
+
+        super().__init__(seed=cfg.sim.seed)
 
         assert (
-            n_properties > n_households
+            cfg.sim.n_properties > cfg.sim.n_households
         ), "Need more properties than households so renters can find rentals."
 
-        self.n_households = n_households
-        self.n_institutions = n_institutions
-        self.n_zones = n_zones
-        self.target_ownership_rate = target_ownership_rate
+        self.n_households = cfg.sim.n_households
+        self.n_institutions = cfg.sim.n_institutions
+        self.n_zones = cfg.sim.n_zones
+        self.target_ownership_rate = cfg.sim.target_ownership_rate
 
         self.policy = policy if policy is not None else NoPolicy()
 
-        cp = credit_params or {}
-        self.credit = CreditEnvironment(**cp)
+        self.credit = CreditEnvironment(
+            mortgage_rate=cfg.credit.mortgage_rate,
+            ltv_limit=cfg.credit.ltv_limit,
+            dti_limit=cfg.credit.dti_limit,
+            loan_term_years=cfg.credit.loan_term_years,
+        )
 
         # Spatial adjacency — ring topology
-        self._zone_adjacency = self._build_zone_adjacency(n_zones)
+        self._zone_adjacency = self._build_zone_adjacency(cfg.sim.n_zones)
 
         # Housing stock (guaranteed zone distribution)
-        self.properties = self._init_properties(n_properties, n_zones)
+        self.properties = self._init_properties(cfg.sim.n_properties, cfg.sim.n_zones)
         self._property_map = {p.id: p for p in self.properties}
 
         # Agents
-        self._init_agents(n_households, n_institutions)
+        self._init_agents(cfg.sim.n_households, cfg.sim.n_institutions)
 
         # Ownership and tenure allocation
         self._init_ownership_and_tenure()
@@ -165,7 +153,8 @@ class HousingModel(mesa.Model):
         Initial estimated_value and purchase_anchor_price are set to
         200_000 + 50_000 * quality (quality-proportional baseline).
         """
-        zone_means = self.rng.normal(0.0, 0.5, n_zones)
+        pcfg = self.config.property_init
+        zone_means = self.rng.normal(0.0, pcfg.zone_quality_sd, n_zones)
 
         # Distribute properties evenly: each zone gets its quota
         base = n_properties // n_zones
@@ -176,15 +165,15 @@ class HousingModel(mesa.Model):
         zone_assignments = []
         for z, count in enumerate(zone_counts):
             for _ in range(count):
-                q = zone_means[z] + self.rng.normal(0.0, 0.5)
+                q = zone_means[z] + self.rng.normal(0.0, pcfg.property_residual_sd)
                 raw_qualities.append(q)
                 zone_assignments.append(z)
 
         q_arr = np.array(raw_qualities)
         q_std = (q_arr - q_arr.mean()) / (q_arr.std() + 1e-9)
 
-        base_price = 200_000.0
-        price_sensitivity = 50_000.0
+        base_price = pcfg.base_price
+        price_sensitivity = pcfg.price_sensitivity
 
         props = []
         for i in range(n_properties):
@@ -212,9 +201,14 @@ class HousingModel(mesa.Model):
 
         Institutions: cash-rich, low funding rate.
         """
-        incomes = self.rng.lognormal(np.log(35_000), 0.5, n_households)
-        cash_mult = self.rng.uniform(0.5, 2.0, n_households)
-        risk_av = self.rng.lognormal(0.0, 0.5, n_households)
+        acfg = self.config.agent_init
+        incomes = self.rng.lognormal(
+            np.log(acfg.income_median), acfg.income_sigma, n_households
+        )
+        cash_mult = self.rng.uniform(acfg.cash_mult_low, acfg.cash_mult_high, n_households)
+        risk_av = self.rng.lognormal(
+            acfg.risk_aversion_mu, acfg.risk_aversion_sigma, n_households
+        )
 
         for i in range(n_households):
             zone = int(i % self.n_zones)  # distribute evenly across zones
@@ -232,8 +226,12 @@ class HousingModel(mesa.Model):
             InstitutionalAgent(
                 unique_id=n_households + j,
                 model=self,
-                cash=float(self.rng.uniform(5_000_000, 20_000_000)),
-                funding_rate=float(self.rng.uniform(0.02, 0.03)),
+                cash=float(self.rng.uniform(acfg.inst_cash_low, acfg.inst_cash_high)),
+                funding_rate=float(
+                    self.rng.uniform(
+                        acfg.inst_funding_rate_low, acfg.inst_funding_rate_high
+                    )
+                ),
                 home_zone=zone,
             )
 
@@ -268,7 +266,9 @@ class HousingModel(mesa.Model):
         props_sorted = sorted(self.properties, key=lambda p: p.quality, reverse=True)
 
         n_owners_target = int(self.target_ownership_rate * len(households))
-        n_inst_target = int(0.10 * len(self.properties))
+        n_inst_target = int(
+            self.config.sim.inst_ownership_share * len(self.properties)
+        )
 
         # --- Allocate ownership ---
         available = list(props_sorted)
@@ -342,12 +342,12 @@ class HousingModel(mesa.Model):
         ]
         if allocated:
             return [float(np.mean(allocated))]
-        return [200_000.0]
+        return [self.config.market.fallback_price]
 
     def _estimate_initial_rent(self):
-        """Monthly rent from ~4.5% gross yield on median property price."""
+        """Monthly rent from the configured gross yield on median property price."""
         prices = [p.estimated_value for p in self.properties]
-        return float(np.median(prices)) * 0.045 / 12.0
+        return float(np.median(prices)) * self.config.market.initial_rent_yield / 12.0
 
     # ------------------------------------------------------------------
     # Main step
@@ -470,7 +470,10 @@ class HousingModel(mesa.Model):
                     if pid == agent.home_property:
                         # Owner-occupied home: sell or rent_out trigger listing
                         if action == "sell":
-                            reservation = prop.purchase_anchor_price * 0.95
+                            reservation = (
+                                prop.purchase_anchor_price
+                                * self.config.market.household_sell_reservation_discount
+                            )
                             ownership_market.list_property(
                                 pid, agent.unique_id, reservation
                             )
@@ -484,7 +487,10 @@ class HousingModel(mesa.Model):
                     else:
                         # Investment property: always list for rent unless selling
                         if action == "sell":
-                            reservation = prop.purchase_anchor_price * 0.95
+                            reservation = (
+                                prop.purchase_anchor_price
+                                * self.config.market.household_sell_reservation_discount
+                            )
                             ownership_market.list_property(
                                 pid, agent.unique_id, reservation
                             )
@@ -506,7 +512,10 @@ class HousingModel(mesa.Model):
                     prop.listed_for_rent = False
 
                     if action == "sell":
-                        reservation = prop.purchase_anchor_price * 0.97
+                        reservation = (
+                            prop.purchase_anchor_price
+                            * self.config.market.inst_sell_reservation_discount
+                        )
                         ownership_market.list_property(
                             pid, agent.unique_id, reservation
                         )
@@ -596,9 +605,13 @@ class HousingModel(mesa.Model):
     def _reservation_rent(self, prop):
         """
         Minimum rent a landlord will accept.
-        Anchored to ~4% gross yield on purchase anchor price.
+        Anchored to the configured gross yield on purchase anchor price.
         """
-        return max(200.0, prop.purchase_anchor_price * 0.04 / 12.0)
+        mcfg = self.config.market
+        return max(
+            mcfg.min_reservation_rent,
+            prop.purchase_anchor_price * mcfg.landlord_reservation_yield / 12.0,
+        )
 
     # ------------------------------------------------------------------
     # Transaction application
@@ -675,7 +688,7 @@ class HousingModel(mesa.Model):
         elif self._price_history:
             period_avg = self._price_history[-1]
         else:
-            period_avg = 200_000.0
+            period_avg = self.config.market.fallback_price
         self._price_history.append(period_avg)
 
         if self.this_step_rental_transactions:
@@ -687,8 +700,9 @@ class HousingModel(mesa.Model):
         elif self._rent_history:
             self._rent_history.append(self._rent_history[-1])
 
-        p_signal = price_growth_signal(self._price_history[-5:])
-        r_signal = rent_growth_signal(self._rent_history[-5:])
+        window = self.config.expectations.signal_window
+        p_signal = price_growth_signal(self._price_history[-window:])
+        r_signal = rent_growth_signal(self._rent_history[-window:])
 
         for agent in self.agents:
             agent.update_expectations(p_signal, r_signal)

@@ -9,42 +9,40 @@ Executes a baseline simulation and prints per-step metrics to console.
 Outputs a CSV of collected data to housing_abm_results.csv.
 """
 
-import csv
 import os
 import sys
 
 # Ensure the housing_abm directory is on the path when run from project root
 sys.path.insert(0, os.path.dirname(__file__))
 
+from config import load_config
 from model import HousingModel
 
 
-def run_simulation(n_steps=30, seed=42, verbose=True):
+def run_simulation(config=None, n_steps=None, verbose=True):
     """
     Run the baseline simulation.
 
-    n_steps : number of model steps to execute
-    seed    : random seed
+    config  : Config instance (defaults to the bundled config.toml)
+    n_steps : number of model steps to execute (defaults to config.sim.n_steps)
     verbose : print per-step summary to console
     """
+    cfg = config if config is not None else load_config()
+    if n_steps is None:
+        n_steps = cfg.sim.n_steps
+
     print("=" * 60)
     print("Housing Market ABM — Baseline Simulation")
     print("=" * 60)
     print(f"  Steps:        {n_steps}")
-    print(f"  Households:   100")
-    print(f"  Institutions: 5")
-    print(f"  Properties:   120")
-    print(f"  Zones:        10")
-    print(f"  Seed:         {seed}")
+    print(f"  Households:   {cfg.sim.n_households}")
+    print(f"  Institutions: {cfg.sim.n_institutions}")
+    print(f"  Properties:   {cfg.sim.n_properties}")
+    print(f"  Zones:        {cfg.sim.n_zones}")
+    print(f"  Seed:         {cfg.sim.seed}")
     print("=" * 60)
 
-    model = HousingModel(
-        n_households=100,
-        n_institutions=5,
-        n_properties=120,
-        n_zones=10,
-        seed=seed,
-    )
+    model = HousingModel(config=cfg)
 
     for step in range(n_steps):
         model.step()
@@ -89,14 +87,21 @@ def run_simulation(n_steps=30, seed=42, verbose=True):
     return model
 
 
-def run_credit_shock_experiment(n_steps=40, seed=42):
+def run_credit_shock_experiment(config=None, n_steps=40):
     """
     Demonstrates the marginal-pricer mechanism by tightening credit at step 20.
 
     Household WTP falls as mortgage_rate rises.
     Institutional WTP is anchored to yields (less affected).
     Observe shift in household_marginal_pricer_share.
+
+    The shock values below are experiment-specific overrides (intentional
+    deviations from the baseline), not baseline assumptions, so they live here
+    rather than in config.toml. The loan term is taken from config so only the
+    shocked dimensions differ from baseline.
     """
+    cfg = config if config is not None else load_config()
+
     print("\n" + "=" * 60)
     print("Experiment: Credit Tightening Shock (step 20)")
     print("=" * 60)
@@ -110,22 +115,16 @@ def run_credit_shock_experiment(n_steps=40, seed=42):
         def on_step_start(self, model):
             if model.steps == 20:
                 model.credit = CreditEnvironment(
-                    mortgage_rate=0.08,  # up from 0.05
-                    ltv_limit=0.80,  # down from 0.85
-                    dti_limit=0.30,  # down from 0.35
+                    mortgage_rate=0.08,  # up from baseline 0.05
+                    ltv_limit=0.80,  # down from baseline 0.85
+                    dti_limit=0.30,  # down from baseline 0.35
+                    loan_term_years=cfg.credit.loan_term_years,
                 )
                 print(
                     "  [SHOCK] Credit tightened at step 20: rate=8%, LTV=80%, DTI=30%"
                 )
 
-    model = HousingModel(
-        n_households=100,
-        n_institutions=5,
-        n_properties=120,
-        n_zones=10,
-        seed=seed,
-        policy=CreditShockPolicy(),
-    )
+    model = HousingModel(config=cfg, policy=CreditShockPolicy())
 
     pre_mp = []
     post_mp = []
@@ -156,8 +155,10 @@ def run_credit_shock_experiment(n_steps=40, seed=42):
 
 
 if __name__ == "__main__":
+    cfg = load_config()
+
     # Baseline run
-    model = run_simulation(n_steps=30, seed=42, verbose=True)
+    model = run_simulation(config=cfg, verbose=True)
 
     # Marginal-pricer experiment
-    run_credit_shock_experiment(n_steps=40, seed=42)
+    run_credit_shock_experiment(config=cfg, n_steps=40)

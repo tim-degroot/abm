@@ -17,6 +17,12 @@ Two fundamentally distinct valuation models:
 This asymmetry is the architectural foundation of the marginal-pricer mechanism.
 The two ceilings respond differently to changes in mortgage rates, rent levels,
 and credit conditions, causing regime switches in who sets prices.
+
+NOTE: The keyword-argument defaults below (operating_cost_fraction, ltv,
+quality_sensitivity, rent_income_fraction) are standalone fallbacks only. In a
+running model the canonical values come from config.toml (agent.* and
+valuation.*) and are passed in explicitly by the agents. Keep them in sync with
+config.toml if you change them.
 """
 
 # ---------------------------------------------------------------------------
