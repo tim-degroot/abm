@@ -38,10 +38,9 @@ import mesa
 from expectations import adaptive_update, init_price_expectation, init_rent_expectation
 from valuation import (
     household_wtp,
-    institution_wtp,
+    investor_wtp,
     household_max_rent,
     estimate_market_rent,
-    renter_outside_option,
 )
 
 # All tunable parameters now live in config.py / config.toml and are read via
@@ -413,15 +412,37 @@ class HouseholdAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def _wtp_for_property(self, prop, avg_market_rent, credit):
-        outside_opt = renter_outside_option(avg_market_rent, self.income)
-        credit_ceil = credit.max_affordable_price(self.cash, self.income)
+        cfg = self.model.config
+        # Exogenous expected capital gain (£), based on the property's current value.
+        capital_gain = self.expected_price_growth * prop.estimated_value
+        annual_rent = (
+            estimate_market_rent(
+                prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
+            )
+            * 12.0
+        )
+
+        if self.is_owner_occupier:
+            # Already housed → an extra purchase is buy-to-let (landlord, plan §11).
+            net_rent = annual_rent * (1.0 - cfg.valuation.operating_cost_fraction)
+            wtp = investor_wtp(
+                net_rent, capital_gain, cfg.credit.btl_funding_rate, cfg.credit.btl_ltv
+            )
+            # Private landlords are still credit-constrained (unlike institutions).
+            return min(wtp, credit.max_affordable_price(self.cash, self.income))
+
+        # Owner-occupier purchase: value = quality consumption + capital gain.
+        quality_value = cfg.valuation.quality_value_scale * annual_rent
+        # Outside option = 0 for now: we don't yet model a net advantage of renting
+        # over owning (or vice versa). Set this if we want to model that later.
+        outside_option = 0.0
         return household_wtp(
-            quality=prop.quality,
-            expected_price_growth=self.expected_price_growth,
-            mortgage_rate=credit.mortgage_rate,
-            ltv=credit.ltv_limit,
-            outside_option_value=outside_opt,
-            credit_ceiling=credit_ceil,
+            quality_value,
+            capital_gain,
+            outside_option,
+            credit.mortgage_rate,
+            credit.ltv_limit,
+            credit.max_affordable_price(self.cash, self.income),
         )
 
     def step(self):
@@ -566,17 +587,14 @@ class InstitutionalAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def _wtp_for_property(self, prop, avg_rent):
-        acfg = self.model.config.agent
-        expected_rent = estimate_market_rent(
-            prop.quality, avg_rent, self.model.config.valuation.quality_sensitivity
+        cfg = self.model.config
+        capital_gain = self.expected_price_growth * prop.estimated_value
+        net_rent = (
+            estimate_market_rent(prop.quality, avg_rent, cfg.valuation.quality_sensitivity)
+            * 12.0
+            * (1.0 - cfg.valuation.operating_cost_fraction)
         )
-        return institution_wtp(
-            expected_rent=expected_rent * 12,
-            operating_cost_fraction=acfg.inst_operating_cost_fraction,
-            expected_price_growth=self.expected_price_growth,
-            funding_rate=self.funding_rate,
-            ltv=acfg.inst_ltv,
-        )
+        return investor_wtp(net_rent, capital_gain, self.funding_rate, cfg.agent.inst_ltv)
 
     def step(self):
         pass

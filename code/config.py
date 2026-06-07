@@ -99,7 +99,6 @@ class AgentConfig:
     income_shock_sd: float = 0.05
     sell_score_offset: float = 0.02
     inst_sell_score_offset: float = 0.01
-    inst_operating_cost_fraction: float = 0.15
     inst_ltv: float = 0.60
 
 
@@ -110,12 +109,16 @@ class CreditConfig:
     dti_limit: float = 0.35
     loan_term_years: int = 25
     rent_affordability_fraction: float = 0.35
+    btl_funding_rate: float = 0.06
+    btl_ltv: float = 0.75
 
 
 @dataclass(frozen=True)
 class ValuationConfig:
     rent_income_fraction: float = 0.35
     quality_sensitivity: float = 0.3
+    operating_cost_fraction: float = 0.15
+    quality_value_scale: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -318,10 +321,25 @@ def _validate(cfg: Config) -> None:
     if c.mortgage_rate < 0:
         raise ValueError(f"credit.mortgage_rate must be >= 0, got {c.mortgage_rate}")
     _pos("credit.loan_term_years", c.loan_term_years)
+    _frac("credit.btl_ltv", c.btl_ltv)
+    if c.btl_funding_rate < 0:
+        raise ValueError(f"credit.btl_funding_rate must be >= 0, got {c.btl_funding_rate}")
+    # plan §6: landlord buy-to-let funding must cost more than institutional funding.
+    if c.btl_funding_rate < ai.inst_funding_rate_high:
+        raise ValueError(
+            f"credit.btl_funding_rate ({c.btl_funding_rate}) must be >= institutional "
+            f"funding (agent_init.inst_funding_rate_high {ai.inst_funding_rate_high}); "
+            "plan §6 requires r_f^BTL > r_f."
+        )
 
-    _frac("agent.inst_operating_cost_fraction", cfg.agent.inst_operating_cost_fraction)
     _frac("agent.inst_ltv", cfg.agent.inst_ltv)
     _frac("valuation.rent_income_fraction", cfg.valuation.rent_income_fraction)
+    _frac("valuation.operating_cost_fraction", cfg.valuation.operating_cost_fraction)
+    if cfg.valuation.quality_value_scale < 0:
+        raise ValueError(
+            f"valuation.quality_value_scale must be >= 0, got "
+            f"{cfg.valuation.quality_value_scale}"
+        )
     _frac("expectations.delta", cfg.expectations.delta)
     if cfg.expectations.signal_window < 2:
         raise ValueError(

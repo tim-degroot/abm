@@ -128,11 +128,12 @@ income_reversion             = 0.05   # mean-reversion speed of income (TODO: pl
 income_shock_sd              = 0.05   # log-scale income shock volatility
 sell_score_offset            = 0.02   # household sell vs hold logit offset
 inst_sell_score_offset       = 0.01   # institution sell vs hold logit offset
-inst_operating_cost_fraction = 0.15   # institution operating costs as fraction of rent
 inst_ltv                     = 0.60   # institution leverage in WTP
 
 # -----------------------------------------------------------------------------
 # [credit] — credit environment / banks (reduced-form, plan.md §9)
+# btl_* are the buy-to-let terms for private landlords; plan §6 requires
+# r_f^BTL (btl_funding_rate) > institutional r_f (agent_init.inst_funding_rate_*).
 # -----------------------------------------------------------------------------
 [credit]
 mortgage_rate              = 0.05
@@ -140,13 +141,17 @@ ltv_limit                  = 0.85
 dti_limit                  = 0.35
 loan_term_years            = 25
 rent_affordability_fraction = 0.35   # same concept as valuation.rent_income_fraction
+btl_funding_rate           = 0.06    # buy-to-let funding rate for private landlords (r_f^BTL)
+btl_ltv                    = 0.75    # buy-to-let leverage
 
 # -----------------------------------------------------------------------------
 # [valuation] — willingness-to-pay / rent estimation
 # -----------------------------------------------------------------------------
 [valuation]
-rent_income_fraction = 0.35   # max share of income spent on rent (= credit.rent_affordability_fraction)
-quality_sensitivity  = 0.3    # elasticity of achievable rent to property quality
+rent_income_fraction    = 0.35   # max share of income spent on rent (= credit.rent_affordability_fraction)
+quality_sensitivity     = 0.3    # elasticity of achievable rent to property quality
+operating_cost_fraction = 0.15   # operating costs as a fraction of rent (landlords & institutions)
+quality_value_scale     = 1.0    # owner-occupier consumption value of a home as a multiple of its annual market rent (kappa)
 
 # -----------------------------------------------------------------------------
 # [expectations] — adaptive expectation formation (plan.md §7)
