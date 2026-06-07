@@ -22,6 +22,10 @@ class Property:
         Mark-to-market estimate updated each period from transaction
         history. Used for net-worth accounting. Distinct from anchor.
 
+    current_rent:
+        Current monthly rent charged for the property if it is rented out.
+        None means the property is not currently let.
+
     owner_id of None means unowned (bank-owned / vacant stock).
     occupant_id of None means physically unoccupied.
     Ownership and occupancy are independent: a landlord owns but does
@@ -34,6 +38,8 @@ class Property:
     owner_id: int | None  # unique_id of owning agent, or None
     purchase_anchor_price: float
     estimated_value: float = 0.0  # mark-to-market; set after init
+    current_rent: float | None = None
+    grid_coord: tuple[int, int] | None = None
 
     # Occupancy (who lives here, regardless of ownership)
     occupant_id: int | None = None

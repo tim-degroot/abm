@@ -35,6 +35,7 @@ class Transaction:
     price: float  # Vickrey price (second-highest bid)
     winning_bid: float  # Highest bid submitted
     buyer_type: str  # 'household' or 'institution'
+    origination_ltv: float | None = None  # LTV attached to buyer's financing (if any)
 
 
 @dataclass
@@ -87,8 +88,32 @@ class OwnershipMarket:
         """
         if property_id not in self._listings:
             return  # property not listed; bid silently dropped
+        if amount <= 0:
+            return
         self._listings[property_id]["bids"].append(
-            {"bidder_id": bidder_id, "amount": amount, "bidder_type": bidder_type}
+            {
+                "bidder_id": bidder_id,
+                "amount": amount,
+                "bidder_type": bidder_type,
+                "origination_ltv": None,
+            }
+        )
+
+    def submit_bid_with_ltv(
+        self, property_id, bidder_id, amount, bidder_type, origination_ltv
+    ):
+        """Submit a bid attaching the origination LTV the bidder expects to receive."""
+        if property_id not in self._listings:
+            return
+        if amount <= 0:
+            return
+        self._listings[property_id]["bids"].append(
+            {
+                "bidder_id": bidder_id,
+                "amount": amount,
+                "bidder_type": bidder_type,
+                "origination_ltv": origination_ltv,
+            }
         )
 
     def clear(self):
@@ -111,15 +136,20 @@ class OwnershipMarket:
             sorted_bids = sorted(bids, key=lambda b: b["amount"], reverse=True)
             top_bid = sorted_bids[0]
 
+            if top_bid["amount"] <= 0:
+                continue
+
             # Must beat reservation price
             if top_bid["amount"] < reservation:
                 continue
 
-            # Vickrey price: second-highest bid, floored at reservation
+            # Vickrey price: second-highest bid, floored at reservation.
+            # If there is only one positive bidder and the reserve is zero,
+            # charge the bidder's own bid rather than clearing at zero.
             if len(sorted_bids) >= 2:
                 price = max(sorted_bids[1]["amount"], reservation)
             else:
-                price = reservation
+                price = max(top_bid["amount"], reservation)
 
             transactions.append(
                 Transaction(
@@ -130,6 +160,7 @@ class OwnershipMarket:
                     price=price,
                     winning_bid=top_bid["amount"],
                     buyer_type=top_bid["bidder_type"],
+                    origination_ltv=top_bid.get("origination_ltv", None),
                 )
             )
 
@@ -168,6 +199,8 @@ class RentalMarket:
         """Submit a rent bid for a listed rental property."""
         if property_id not in self._listings:
             return
+        if monthly_rent_bid <= 0:
+            return
         self._listings[property_id]["bids"].append(
             {"tenant_id": tenant_id, "amount": monthly_rent_bid}
         )
@@ -190,13 +223,19 @@ class RentalMarket:
             sorted_bids = sorted(bids, key=lambda b: b["amount"], reverse=True)
             top_bid = sorted_bids[0]
 
+            if top_bid["amount"] <= 0:
+                continue
+
             if top_bid["amount"] < reservation:
                 continue
 
+            # Vickrey price: second-highest bid, floored at reservation.
+            # If there is only one positive bidder and the reserve is zero,
+            # charge the bidder's own bid rather than clearing at zero.
             if len(sorted_bids) >= 2:
                 rent = max(sorted_bids[1]["amount"], reservation)
             else:
-                rent = reservation
+                rent = max(top_bid["amount"], reservation)
 
             transactions.append(
                 RentalTransaction(

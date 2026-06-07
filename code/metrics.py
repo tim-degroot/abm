@@ -55,6 +55,24 @@ def institutional_ownership_share(model):
     return inst_owned / total
 
 
+def household_ownership_share_of_stock(model):
+    """
+    Fraction of total housing stock owned by households (all household owners' portfolios).
+    This should complement `institutional_ownership_share` when the model keeps
+    all stock owned at every time step.
+    """
+    from agents import HouseholdAgent
+
+    total = len(model.properties)
+    if total == 0:
+        return float("nan")
+    hh_owned = 0
+    for a in model.agents:
+        if isinstance(a, HouseholdAgent):
+            hh_owned += len(getattr(a, "owned_properties", []))
+    return hh_owned / total
+
+
 def avg_winning_bid(model):
     """Mean winning (highest) bid submitted this step."""
     txns = model.this_step_transactions
@@ -79,11 +97,18 @@ def household_marginal_pricer_share(model):
 
 
 def avg_rent(model):
-    """Mean rent from rental transactions this step."""
-    txns = model.this_step_rental_transactions
-    if not txns:
+    """Mean monthly rent across currently rented properties."""
+    rents = [
+        p.current_rent
+        for p in model.properties
+        if p.occupant_id is not None
+        and p.owner_id is not None
+        and p.occupant_id != p.owner_id
+        and p.current_rent is not None
+    ]
+    if not rents:
         return float("nan")
-    return sum(t.monthly_rent for t in txns) / len(txns)
+    return sum(rents) / len(rents)
 
 
 def rental_transaction_volume(model):
@@ -98,6 +123,33 @@ def total_household_net_worth(model):
     return sum(a.net_worth for a in model.agents if isinstance(a, HouseholdAgent))
 
 
+def debug_rental_listed(model):
+    return getattr(model, "_debug_counts", {}).get("rental_listed", 0)
+
+
+def debug_ownership_listed(model):
+    return getattr(model, "_debug_counts", {}).get("ownership_listed", 0)
+
+
+def debug_rental_bids_submitted(model):
+    return getattr(model, "_debug_counts", {}).get("rental_bids_submitted", 0)
+
+
+def debug_ownership_bids_submitted(model):
+    return getattr(model, "_debug_counts", {}).get("ownership_bids_submitted", 0)
+
+
+def debug_ownership_bids_filtered(model):
+    return getattr(model, "_debug_counts", {}).get("ownership_bids_filtered", 0)
+
+
+def debug_avg_ownership_bid(model):
+    samples = getattr(model, "_debug_counts", {}).get("ownership_bid_samples", [])
+    if not samples:
+        return float("nan")
+    return float(sum(samples) / len(samples))
+
+
 # Mapping passed to Mesa DataCollector
 MODEL_REPORTERS = {
     "avg_sale_price": avg_sale_price,
@@ -109,4 +161,11 @@ MODEL_REPORTERS = {
     "avg_rent": avg_rent,
     "rental_transaction_volume": rental_transaction_volume,
     "total_household_net_worth": total_household_net_worth,
+    "debug_rental_listed": debug_rental_listed,
+    "debug_ownership_listed": debug_ownership_listed,
+    "debug_rental_bids_submitted": debug_rental_bids_submitted,
+    "debug_ownership_bids_submitted": debug_ownership_bids_submitted,
+    "debug_ownership_bids_filtered": debug_ownership_bids_filtered,
+    "debug_avg_ownership_bid": debug_avg_ownership_bid,
+    "household_ownership_share_of_stock": household_ownership_share_of_stock,
 }

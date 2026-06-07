@@ -1,4 +1,12 @@
 # TODO
+Everytihng should follow abm/plan.md unless there's a very good reason not to, so review that first if you're not sure about something
+
+
+1. Calibrate `wealth_income_mult_*`, `income_median`, and related init knobs so emergent ownership stays near the 65% target without using `ownership_mode="target"`.
+2. Replace mean-reverting income dynamics with macro growth shocks.
+3. Add spatial quality clustering behind `quality_clustering` and test whether it improves locality realism.
+4. Expand visual diagnostics for prices, rents, tenure, and wealth by agent type.
+5. Review the decision-rule weights, quality handling, and reservation-price logic against `abm/plan.md`.
 
 ## General
 1. ~~Create a config file to store all parameters and initialisation settings, and pass this to all functions that need it.~~ ✅ Done: Moved all settings to config.toml . Now config.py loads these into an immutable Config object and passes them safely to the model, agents and run functions. If you can't find a parameter, check config.py to see if its name was changed in the code.

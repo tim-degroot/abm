@@ -1,19 +1,11 @@
 # =============================================================================
-# Housing Market ABM — canonical parameter file.
-#
 # This is the SINGLE SOURCE OF TRUTH for every parameter and initialisation
 # setting in the model. It is loaded and validated into a frozen `Config`
 # object at startup (see config.py). Nothing in the codebase should hardcode a
 # numeric assumption that belongs here.
 #
 # To run an experiment with different parameters, copy this file, edit it, and
-# pass the path to `load_config(path)` — or override fields programmatically
-# with `dataclasses.replace` on the loaded Config.
-#
-# Each value below mirrors the value the code used *before* this file existed,
-# so loading these defaults reproduces the original baseline run exactly.
-# Provenance / calibration notes and known mismatches with plan.md are recorded
-# inline and summarised in config.py.
+# pass the path to `load_config(path)`
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -26,12 +18,12 @@ n_properties          = 120     # NOTE: run.py used 120; model.py default was 13
 target_ownership_rate = 0.65    # plan.md §19 calibration target ~65%
 inst_ownership_share  = 0.10    # fraction of stock allocated to institutions at init
 seed                  = 42
-n_steps               = 30      # default number of steps for a baseline run
+n_steps               = 500      # default number of steps for a baseline run
 # Initial-tenure mode (see config.py / model.py):
 #   "emergent" — ownership is NOT forced; it falls out of who can afford a deposit
 #                given drawn wealth + LTV. This is the scientific/default setting:
 #                the ~65% owner-occupancy rate (plan §19/§23) is meant to EMERGE,
-#                not be imposed (TODO Model #4 = calibration debt).
+#                not be imposed (see TODO.md: calibration debt).
 #   "target"   — DIAGNOSTIC ONLY. Forces ownership to target_ownership_rate at t=0
 #                (wealthiest households become owners; cash topped up if short so
 #                balance sheets stay feasible & accounting-consistent). Use it to
@@ -61,15 +53,13 @@ ownership_mode        = "emergent"
 #      decreasing them increases market thickness at the cost of locality.
 # -----------------------------------------------------------------------------
 [spatial]
-grid_rows = 4
-grid_cols = 4
+grid_rows = 10
+grid_cols = 10
 
 # -----------------------------------------------------------------------------
 # [property_init] — housing stock generation
 # q_k = mu_z + nu_k, with mu_z ~ N(0, zone_quality_sd) and
 # nu_k ~ N(0, property_residual_sd); qualities then standardised to mean 0 sd 1.
-# (mu_z is drawn iid per zone, per plan.md §3 — spatial CLUSTERING of zone
-#  quality is deferred, see TODO Model #3.)
 # anchor price = base_price + price_sensitivity * quality.
 # base_price is a CALIBRATED market anchor (plan §19 targets: price-to-income,
 # price-to-rent 20-30x), NOT an arbitrary constant — tune it during calibration.
@@ -105,8 +95,8 @@ price_sensitivity    = 50000.0
 [agent_init]
 income_median            = 35000.0   # plan.md §19 wants ONS ASHE calibration (placeholder)
 income_sigma             = 0.5
-wealth_income_mult_low   = 0.5       # total wealth as a multiple of income (was cash_mult); CALIBRATION KNOB for ownership rate (TODO Model #4)
-wealth_income_mult_high  = 2.0
+wealth_income_mult_low   = 0.8       # total wealth as a multiple of income (was cash_mult); CALIBRATION KNOB for ownership rate (see TODO.md)
+wealth_income_mult_high  = 3.0
 ltv_dist_low             = 0.70      # origination LTV distribution (plan §17 / FCA MPSD); capped at credit.ltv_limit
 ltv_dist_high            = 0.85
 landlord_share           = 0.10      # fraction of owner households that are also landlords at t=0
@@ -129,6 +119,8 @@ income_shock_sd              = 0.05   # log-scale income shock volatility
 sell_score_offset            = 0.02   # household sell vs hold logit offset
 inst_sell_score_offset       = 0.01   # institution sell vs hold logit offset
 inst_ltv                     = 0.60   # institution leverage in WTP
+inst_required_return         = 0.03   # institutional risk premium (annual)
+inst_max_bids_per_step       = 9999   # throttle for institutional purchase activity; large value disables the cap
 
 # -----------------------------------------------------------------------------
 # [credit] — credit environment / banks (reduced-form, plan.md §9)
@@ -162,6 +154,8 @@ delta             = 0.7   # smoothing weight on prior expectation
 init_price_growth = 0.02  # initial expected price growth
 init_rent_growth  = 0.02  # initial expected rent growth
 signal_window     = 5     # number of recent periods used to compute growth signals
+noise_sd          = 0.005 # independent expectation noise added per agent each update
+    
 
 # -----------------------------------------------------------------------------
 # [market] — listing, reservation, and seeding parameters used by the model loop
@@ -173,3 +167,13 @@ landlord_reservation_yield          = 0.04   # reservation rent = anchor * yield
 min_reservation_rent                = 200.0
 initial_rent_yield                  = 0.045  # initial avg rent = median price * yield / 12
 fallback_price                      = 200000.0  # price-history seed / fallback when no transactions
+	# Loss aversion: multiple >1 increases reservation price when seller faces
+	# a nominal loss relative to their purchase anchor `p_0`. Institutions are
+	# exempt (lambda = 0).
+	loss_aversion_owner = 1.30
+	loss_aversion_landlord = 1.15
+	estimated_value_smooth_alpha = 1.0
+
+[debug]
+enable_bid_logging = false
+

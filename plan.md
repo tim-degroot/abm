@@ -818,3 +818,13 @@ The central contribution is the proposition that housing-market dynamics can be 
 # 27. PS
 
 Another interesting question is, in the absence of shocks: what is the equilibrium wealth distribution across agent types and income deciles? Do the rich get richer, or is there a stable distribution? How does this depend on credit conditions?
+
+---
+
+
+given there are no births/deaths here this absorbing state makes sense broadly but lets think about it
+
+
+they MUST sell whatever gives them the least expected utility loss to raise money and avoid bankruptcy (BEFORE they run out of money) logit
+
+basically slightly better credit to individuals and lower required return to make up for the complexity

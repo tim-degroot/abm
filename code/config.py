@@ -49,7 +49,9 @@ class SimConfig:
     inst_ownership_share: float = 0.10
     seed: int = 42
     n_steps: int = 30
-    ownership_mode: str = "emergent"  # "emergent" (default) | "target" (diagnostic only)
+    ownership_mode: str = (
+        "emergent"  # "emergent" (default) | "target" (diagnostic only)
+    )
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,8 @@ class PropertyInitConfig:
     property_residual_sd: float = 0.5
     base_price: float = 200_000.0
     price_sensitivity: float = 50_000.0
+    quality_clustering: bool = False
+    clustering_strength: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,14 @@ class AgentConfig:
     sell_score_offset: float = 0.02
     inst_sell_score_offset: float = 0.01
     inst_ltv: float = 0.60
+    # Institutional required return (risk premium) added to funding_rate when
+    # valuing expected capital gains. This prevents unrealistically large WTP
+    # driven solely by low funding rates.
+    inst_required_return: float = 0.03
+    # Maximum number of institutional ownership bids allowed per model step.
+    # Set to a large value to disable (default = n_properties), or lower to
+    # throttle institutional purchase activity and prevent rapid sell-offs.
+    inst_max_bids_per_step: int = 9999
 
 
 @dataclass(frozen=True)
@@ -127,6 +139,7 @@ class ExpectationsConfig:
     init_price_growth: float = 0.02
     init_rent_growth: float = 0.02
     signal_window: int = 5
+    noise_sd: float = 0.005
 
 
 @dataclass(frozen=True)
@@ -137,6 +150,18 @@ class MarketConfig:
     min_reservation_rent: float = 200.0
     initial_rent_yield: float = 0.045
     fallback_price: float = 200_000.0
+    # Loss aversion parameters (owner-occupiers and private landlords).
+    loss_aversion_owner: float = 1.30
+    loss_aversion_landlord: float = 1.15
+    # Estimated value update smoothing: alpha in [0,1].
+    # New estimated_value = alpha * transaction_price + (1-alpha) * old_estimated_value.
+    # Set to 1.0 for legacy behaviour (instant update); use <1.0 to damp single-step outliers.
+    estimated_value_smooth_alpha: float = 1.0
+
+
+@dataclass(frozen=True)
+class DebugConfig:
+    enable_bid_logging: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +179,7 @@ _SECTIONS = {
     "valuation": ("valuation", ValuationConfig),
     "expectations": ("expectations", ExpectationsConfig),
     "market": ("market", MarketConfig),
+    "debug": ("debug", DebugConfig),
 }
 
 
@@ -170,6 +196,7 @@ class Config:
     valuation: ValuationConfig = ValuationConfig()
     expectations: ExpectationsConfig = ExpectationsConfig()
     market: MarketConfig = MarketConfig()
+    debug: DebugConfig = DebugConfig()
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +350,9 @@ def _validate(cfg: Config) -> None:
     _pos("credit.loan_term_years", c.loan_term_years)
     _frac("credit.btl_ltv", c.btl_ltv)
     if c.btl_funding_rate < 0:
-        raise ValueError(f"credit.btl_funding_rate must be >= 0, got {c.btl_funding_rate}")
+        raise ValueError(
+            f"credit.btl_funding_rate must be >= 0, got {c.btl_funding_rate}"
+        )
     # plan §6: landlord buy-to-let funding must cost more than institutional funding.
     if c.btl_funding_rate < ai.inst_funding_rate_high:
         raise ValueError(

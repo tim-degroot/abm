@@ -15,7 +15,6 @@ replace the entire expectation system without touching agent code.
 
 import numpy as np
 
-
 # NOTE: These are standalone fallback defaults only. In a running model the
 # canonical values come from config.toml (expectations.delta, init_price_growth,
 # init_rent_growth) and are passed in explicitly by the agents. Keep them in
@@ -51,6 +50,8 @@ def price_growth_signal(recent_prices):
     p_curr = recent_prices[-1]
     if p_prev <= 0:
         return 0.0
+    if p_prev <= 0:
+        return 0.0
     return (p_curr - p_prev) / p_prev
 
 
@@ -65,6 +66,8 @@ def rent_growth_signal(recent_rents):
         return 0.0
     r_prev = recent_rents[-2]
     r_curr = recent_rents[-1]
+    if r_prev <= 0:
+        return 0.0
     if r_prev <= 0:
         return 0.0
     return (r_curr - r_prev) / r_prev

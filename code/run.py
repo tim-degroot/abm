@@ -82,8 +82,10 @@ def run_simulation(config=None, n_steps=None, verbose=True):
     print("=" * 60)
     print("Simulation complete.")
 
-    # Write results to CSV
-    output_path = os.path.join(os.path.dirname(__file__), "housing_abm_results.csv")
+    # Write results to CSV under `results/` so artifacts are colocated.
+    results_dir = os.path.join(os.path.dirname(__file__), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    output_path = os.path.join(results_dir, "housing_abm_results.csv")
     df = model.datacollector.get_model_vars_dataframe()
     df.to_csv(output_path)
     print(f"Results written to: {output_path}")
