@@ -1,7 +1,6 @@
 # TODO
 Everytihng should follow abm/plan.md unless there's a very good reason not to, so review that first if you're not sure about something
 
-
 1. Calibrate `wealth_income_mult_*`, `income_median`, and related init knobs so emergent ownership stays near the 65% target without using `ownership_mode="target"`.
 2. Replace mean-reverting income dynamics with macro growth shocks.
 3. Add spatial quality clustering behind `quality_clustering` and test whether it improves locality realism.
@@ -45,8 +44,6 @@ Everytihng should follow abm/plan.md unless there's a very good reason not to, s
 ## Model
 1. ~~Correct the spatial structure, it should be a 2D grid (toroidal).~~ ✅ Done: replaced the 1-D ring with a 2D von Neumann torus (`grid_rows`×`grid_cols` in config [spatial], default 4×4 = Z=16). Original plan's Z=10 can't form a non-degenerate torus — 2×5 collapses. See config.toml [spatial].)
 2. ~~The initialization rules are ad hoc and need revising following the plan.~~ ✅ Done. Agent initialization now follows plan §17-18: wealth and origination LTV are drawn from configured distributions; deposit, mortgage, and liquid cash are derived from those two numbers so HousingAssets = HousingEquity + MortgageDebt holds by construction (checked via _verify_accounting). Ownership emerges from who can afford a deposit; a fraction of owners are seeded as landlords with right-skewed portfolios. 
-3. (Spatial) Consider adding spatial **quality clustering**: make zone quality means `mu_z` spatially autocorrelated on the torus (good/bad neighbourhoods cluster) instead of iid. Gate behind a `quality_clustering` true/false config flag.
-4. (Calibration debt) With the chosen init strategy (fix price + wealth + LTV, let ownership **emerge**), the ~65% owner-occupancy rate (plan §19/§23) is an *output*, not guaranteed. TODO: Calibrate the wealth-distribution parameters so emergent ownership lands near 65%. The diagnostic `sim.ownership_mode = "emergent" | "target"` flag is implemented: `"target"` forces 65% at t=0 (feasible sheets, cash topped up if short) to isolate whether faults live in the wealth distribution vs the market rules. Never report target-mode runs as results.
 
 ## Policies
 

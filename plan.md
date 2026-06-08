@@ -821,9 +821,7 @@ Another interesting question is, in the absence of shocks: what is the equilibri
 
 ---
 
-
 given there are no births/deaths here this absorbing state makes sense broadly but lets think about it
-
 
 they MUST sell whatever gives them the least expected utility loss to raise money and avoid bankruptcy (BEFORE they run out of money) logit
 
