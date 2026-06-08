@@ -750,6 +750,12 @@ class HousingModel(mesa.Model):
         # 2. Mark-to-market revaluation
         self._mark_to_market()
 
+        # 2b. Lease turnover: expire a fraction of active tenancies so rental
+        # supply recirculates and rents are re-discovered every period (plan §21).
+        # Done before listing/bidding so freed stock is listable and displaced
+        # tenants re-enter the rental search this same step.
+        self._expire_leases()
+
         avg_rent = self._avg_rent
         distress_sales = self._plan_distress_sales(avg_rent)
 
@@ -797,6 +803,69 @@ class HousingModel(mesa.Model):
         # 10. Data
         self.datacollector.collect(self)
         self._sync_visual_grid()
+
+    # ------------------------------------------------------------------
+    # Lease turnover
+    # ------------------------------------------------------------------
+
+    def _expire_leases(self):
+        """
+        Randomly end a fraction of active rental tenancies each period, subject
+        to a minimum lease term.
+
+        Without turnover, tenants never leave: once the initial vacancies fill,
+        no property returns to the rental market and rental_transaction_volume
+        collapses to 0, freezing avg_rent at its seeded value. A Bernoulli draw
+        per active tenancy captures BOTH landlord non-renewal and tenant
+        relocation (job/family/move) — the same observable outcome: the lease
+        ends.
+
+        Minimum lease term (`market.min_lease_quarters`): a fresh tenant cannot
+        be turned over immediately. While tenancy age < the minimum term, only a
+        LOW "early-exit" hazard (`market.lease_early_exit_prob`) applies — this
+        models the genuine but uncommon real-life cases (break clauses,
+        relocation, distress, eviction). Set lease_early_exit_prob = 0 to forbid
+        early exit entirely (hard minimum term). Once tenancy age reaches the
+        minimum term, the normal turnover hazard (`market.lease_expiry_prob`,
+        default ~1/12 ⇒ ~3-year mean tenure) applies.
+
+        On expiry the property returns to the rental pool (vacant + listed) and
+        the tenant is displaced into the rental search queue (home_property=None,
+        so is_renter is True and _get_rental_candidates picks them up). Only
+        genuine tenancies expire — owner-occupiers (occupant == owner) are never
+        touched.
+        """
+        mcfg = self.config.market
+        base_prob = mcfg.lease_expiry_prob
+        early_prob = mcfg.lease_early_exit_prob
+        min_q = mcfg.min_lease_quarters
+
+        for prop in self.properties:
+            # Active tenancy = someone occupies a property they do not own.
+            if (
+                prop.occupant_id is None
+                or prop.owner_id is None
+                or prop.occupant_id == prop.owner_id
+            ):
+                continue
+
+            # Age the tenancy by one period.
+            prop.tenancy_quarters += 1
+
+            # Within the minimum term only the low early-exit hazard applies;
+            # after it, the normal turnover hazard takes over.
+            prob = base_prob if prop.tenancy_quarters >= min_q else early_prob
+            if prob <= 0 or self.rng.random() >= prob:
+                continue
+
+            tenant = self._agent_map.get(prop.occupant_id)
+            # Free the unit back into the rental pool.
+            prop.occupant_id = None
+            prop.tenancy_quarters = 0
+            prop.listed_for_rent = True
+            # Displace the tenant so it re-enters the rental search this step.
+            if isinstance(tenant, HouseholdAgent):
+                tenant.vacate_rental()
 
     # ------------------------------------------------------------------
     # Mark-to-market
@@ -1000,8 +1069,19 @@ class HousingModel(mesa.Model):
 
                 # Rental bid — allow current renters to search for new rentals
                 # (move desire), or agents that explicitly chose 'rent', or
-                # unhoused agents.
-                if action == "rent" or agent.home_property is None or agent.is_renter:
+                # unhoused agents. BUT a housed tenant still inside its minimum
+                # lease term is locked in and cannot voluntarily move out yet
+                # (the unhoused always search; tenants past the term may move at
+                # renewal). This mirrors the turnover restriction in
+                # _expire_leases so the minimum tenure holds for both mechanisms.
+                wants_rental = (
+                    action == "rent"
+                    or agent.home_property is None
+                    or agent.is_renter
+                )
+                if wants_rental and self._tenant_locked_in(agent):
+                    wants_rental = False
+                if wants_rental:
                     rental_candidates = self._get_rental_candidates(agent)
                     if not rental_candidates:
                         # nothing to bid on
@@ -1271,6 +1351,20 @@ class HousingModel(mesa.Model):
             return available_cash / max(1e-9, 1.0 - ltv)
         return 0.0
 
+    def _tenant_locked_in(self, agent):
+        """
+        True iff `agent` is a housed tenant still inside its minimum lease term,
+        and therefore cannot voluntarily move out yet. The unhoused are never
+        locked (they must search for a home); owner-occupiers are not tenants.
+        Mirrors the minimum-term restriction in _expire_leases.
+        """
+        if agent.home_property is None or not agent.is_renter:
+            return False
+        home = self._property_map.get(agent.home_property)
+        if home is None:
+            return False
+        return home.tenancy_quarters < self.config.market.min_lease_quarters
+
     def _get_rental_candidates(self, agent):
         """Properties listed for rent in agent's search zones (not self-owned)."""
         zones = self.get_search_zones(agent.home_zone)
@@ -1337,13 +1431,20 @@ class HousingModel(mesa.Model):
             if seller is None or buyer is None:
                 continue
 
-            # Vacate current occupant if it is the buyer (moving from rented)
-            # — occupant_id will be reset by buyer.acquire_property
+            # Vacate the current tenant on sale (their home record is cleared by
+            # vacate_rental). Crucially also clear occupant_id here so it cannot
+            # go stale: if the buyer does not move in (e.g. an institution or a
+            # landlord already housed elsewhere), the unit must read as vacant,
+            # not still-occupied by a tenant who has left. A stale occupant_id
+            # silently breaks the occupant/home invariant and lets two agents end
+            # up "living" in one property. If the buyer is moving in,
+            # acquire_property overwrites occupant_id below.
             prev_occupant_id = prop.occupant_id
             if prev_occupant_id is not None and prev_occupant_id != txn.seller_id:
                 prev_occupant = self._agent_map.get(prev_occupant_id)
                 if isinstance(prev_occupant, HouseholdAgent):
                     prev_occupant.vacate_rental()
+                prop.occupant_id = None
 
             seller.release_property(prop, txn.price)
 
@@ -1374,6 +1475,17 @@ class HousingModel(mesa.Model):
             if tenant is None or landlord is None:
                 continue
 
+            # Ownership transactions are applied BEFORE rentals, so a property
+            # can be both sold and let in the same step (it was listed in both
+            # markets while vacant). Drop the rental award if it is now stale:
+            # the landlord no longer owns the unit (it sold), or the new owner
+            # moved in (owner-occupied). Otherwise a tenant would move in on top
+            # of the new owner-occupier and both would claim it as home.
+            if prop.owner_id != txn.landlord_id:
+                continue
+            if prop.occupant_id is not None and prop.occupant_id == prop.owner_id:
+                continue
+
             # Evict previous occupant if any
             if prop.occupant_id is not None and prop.occupant_id != txn.tenant_id:
                 prev = self._agent_map.get(prop.occupant_id)
@@ -1381,10 +1493,24 @@ class HousingModel(mesa.Model):
                     prev.vacate_rental()
 
             prop.occupant_id = txn.tenant_id
+            prop.tenancy_quarters = 0  # fresh tenancy; starts the minimum term
             prop.listed_for_rent = False
             prop.current_rent = txn.monthly_rent
 
             if isinstance(tenant, HouseholdAgent):
+                # Free the tenant's previous rental unit so it does not retain a
+                # stale occupant (which would double-occupy). Only a rental they
+                # actually occupied and do not own; their owned home is untouched.
+                old_home = tenant.home_property
+                if (
+                    old_home is not None
+                    and old_home != prop.id
+                    and old_home not in tenant.owned_properties
+                ):
+                    old_prop = self._property_map.get(old_home)
+                    if old_prop is not None and old_prop.occupant_id == tenant.unique_id:
+                        old_prop.occupant_id = None
+                        old_prop.listed_for_rent = True
                 tenant.move_into_rental(prop)
                 tenant.pay_rent(txn.monthly_rent)
 

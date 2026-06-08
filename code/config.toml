@@ -184,6 +184,9 @@ landlord_reservation_yield          = 0.04   # reservation rent = anchor * yield
 min_reservation_rent                = 200.0
 initial_rent_yield                  = 0.045  # initial avg rent = median price * yield / 12
 fallback_price                      = 200000.0  # price-history seed / fallback when no transactions
+lease_expiry_prob                   = 0.0833 # per-period prob an active tenancy ends AFTER the minimum term (landlord non-renewal OR tenant move); ~1/12 => mean tenure ~3yr. Recirculates rental supply so avg_rent is re-discovered every period (plan §21)
+min_lease_quarters                  = 4      # minimum lease term in quarters before normal turnover applies; 4 = 1 year (use 2 for 6 months)
+lease_early_exit_prob               = 0.01   # low hazard DURING the minimum term (real break clauses/relocation/distress); set 0.0 to forbid early exit entirely
 	# Loss aversion: multiple >1 increases reservation price when seller faces
 	# a nominal loss relative to their purchase anchor `p_0`. Institutions are
 	# exempt (lambda = 0).

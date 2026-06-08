@@ -315,7 +315,18 @@ class HouseholdAgent(mesa.Agent):
 
         # Move in if currently unhoused or renting
         if not self.is_owner_occupier:
-            # Leave current rental if any (occupant_id cleared by model)
+            # Free the rental unit being vacated so it does not keep a stale
+            # occupant pointing at this buyer (which would double-occupy).
+            old_home = self.home_property
+            if (
+                old_home is not None
+                and old_home != prop.id
+                and old_home not in self.owned_properties
+            ):
+                old_prop = self.model._property_map.get(old_home)
+                if old_prop is not None and old_prop.occupant_id == self.unique_id:
+                    old_prop.occupant_id = None
+                    old_prop.listed_for_rent = True
             self.home_property = prop.id
             self.home_zone = prop.zone
             prop.occupant_id = self.unique_id

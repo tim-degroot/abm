@@ -179,6 +179,20 @@ class MarketConfig:
     min_reservation_rent: float = 200.0
     initial_rent_yield: float = 0.045
     fallback_price: float = 200_000.0
+    # Lease turnover: per-period probability that an active tenancy ends, so
+    # rental supply recirculates and rents are re-discovered every period
+    # (plan §21). Captures both landlord non-renewal and tenant relocation.
+    # Default ~1/12 => mean tenure ~12 quarters (~3 years). Applies only AFTER
+    # the minimum lease term below.
+    lease_expiry_prob: float = 0.0833
+    # Minimum lease term in periods (quarters): a fresh tenant cannot be turned
+    # over by the normal hazard until the tenancy has lasted this long. Default
+    # 4 = 1 year (set 2 for a 6-month minimum).
+    min_lease_quarters: int = 4
+    # Low "early-exit" hazard that applies DURING the minimum term — the genuine
+    # but uncommon real-life cases (break clauses, relocation, distress,
+    # eviction). Set to 0.0 to forbid early exit entirely (hard minimum term).
+    lease_early_exit_prob: float = 0.01
     # Loss aversion parameters (owner-occupiers and private landlords).
     loss_aversion_owner: float = 1.30
     loss_aversion_landlord: float = 1.15
@@ -423,6 +437,12 @@ def _validate(cfg: Config) -> None:
         m.household_sell_reservation_discount,
     )
     _frac("market.inst_sell_reservation_discount", m.inst_sell_reservation_discount)
+    _frac("market.lease_expiry_prob", m.lease_expiry_prob)
+    _frac("market.lease_early_exit_prob", m.lease_early_exit_prob)
+    if m.min_lease_quarters < 0:
+        raise ValueError(
+            f"market.min_lease_quarters must be >= 0, got {m.min_lease_quarters}"
+        )
 
 
 def load_config(path: str | Path | None = None, *, strict: bool = False) -> Config:
