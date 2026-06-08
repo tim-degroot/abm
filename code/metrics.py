@@ -181,6 +181,11 @@ def ceiling_bind_rate(model):
     return model._ceiling_bind_count / n
 
 
+def macro_state(model):
+    """Current macro state string (Boom | Neutral | Recession)."""
+    return getattr(model, "current_macro_state", "Neutral")
+
+
 # Mapping passed to Mesa DataCollector
 MODEL_REPORTERS = {
     "avg_sale_price": avg_sale_price,
@@ -201,4 +206,5 @@ MODEL_REPORTERS = {
     "household_ownership_share_of_stock": household_ownership_share_of_stock,
     "ceiling_bind_rate": ceiling_bind_rate,
     "unhoused_households": unhoused_households,
+    "macro_state": macro_state,
 }

@@ -136,6 +136,8 @@ class HousingModel(mesa.Model):
         self._avg_rent = self._current_avg_rent()
         self._rent_history.append(self._avg_rent)
 
+        self.current_macro_state = getattr(self.config.macro, "initial_state", "Neutral")
+
         # Per-step registers
         self.this_step_transactions = []
         self.this_step_rental_transactions = []
@@ -737,6 +739,9 @@ class HousingModel(mesa.Model):
          10. Data collection
         """
         self.policy.on_step_start(self)
+        # Advance macro state (Markov chain) before incomes evolve so income
+        # draws in this period reflect the current macro state.
+        self._advance_macro_state()
         self.credit = self.policy.modify_credit(self.credit)
 
         self.this_step_transactions = []
@@ -901,6 +906,52 @@ class HousingModel(mesa.Model):
                 agent._housing_asset_value = sum(
                     self._property_map[pid].estimated_value for pid in agent.portfolio
                 )
+
+    def _advance_macro_state(self):
+        """Advance the macro state xi ∈ {Boom, Neutral, Recession} using a
+        Markov transition matrix supplied in `self.config.macro`.
+
+        The config fields are read as probabilities row-wise (from-state -> to-state).
+        """
+        mcfg = getattr(self.config, "macro", None)
+        if mcfg is None:
+            return
+
+        current = getattr(self, "current_macro_state", "Neutral")
+        r = self.rng.random()
+
+        match current:
+            case "Boom":
+                probs = [
+                    mcfg.boom_to_boom,
+                    mcfg.boom_to_neutral,
+                    mcfg.boom_to_recession,
+                ]
+                states = ["Boom", "Neutral", "Recession"]
+            case "Recession":
+                probs = [
+                    mcfg.recession_to_boom,
+                    mcfg.recession_to_neutral,
+                    mcfg.recession_to_recession,
+                ]
+                states = ["Boom", "Neutral", "Recession"]
+            case _:
+                probs = [
+                    mcfg.neutral_to_boom,
+                    mcfg.neutral_to_neutral,
+                    mcfg.neutral_to_recession,
+                ]
+                states = ["Boom", "Neutral", "Recession"]
+
+        # Cumulative selection
+        cum = 0.0
+        for p, s in zip(probs, states):
+            cum += float(p)
+            if r < cum:
+                self.current_macro_state = s
+                return
+        # Numerical safety: fallback to last state if rounding leaves r >= cum
+        self.current_macro_state = states[-1]
 
     # ------------------------------------------------------------------
     # Market participation

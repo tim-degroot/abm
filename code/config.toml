@@ -115,7 +115,6 @@ inst_funding_rate_high   = 0.03
 beta_action                  = 1.0    # logit temperature, Stage 1 action choice
 beta_property                = 0.5    # logit temperature, Stage 2 property choice
 income_reversion             = 0.05   # mean-reversion speed of income (TODO: plan wants growth draws, not reversion)
-income_shock_sd              = 0.05   # log-scale income shock volatility
 sell_score_offset            = 0.02   # household sell vs hold logit offset
 inst_sell_score_offset       = 0.01   # institution sell vs hold logit offset
 inst_ltv                     = 0.60   # institution leverage in WTP
@@ -173,6 +172,27 @@ init_rent_growth  = 0.02  # initial expected rent growth
 signal_window     = 5     # number of recent periods used to compute growth signals
 noise_sd          = 0.005 # independent expectation noise added per agent each update
     
+# -----------------------------------------------------------------------------
+# [macro] — simple macro state growth parameters used for income shocks
+# -----------------------------------------------------------------------------
+[macro]
+initial_state = "Neutral"
+boom_mean     = 0.03
+boom_sd       = 0.02
+neutral_mean  = 0.01
+neutral_sd    = 0.01
+recession_mean = -0.02
+recession_sd   = 0.03
+boom_to_boom = 0.80
+boom_to_neutral = 0.15
+boom_to_recession = 0.05
+neutral_to_boom = 0.05
+neutral_to_neutral = 0.90
+neutral_to_recession = 0.05
+recession_to_boom = 0.05
+recession_to_neutral = 0.15
+recession_to_recession = 0.80
+
 
 # -----------------------------------------------------------------------------
 # [market] — listing, reservation, and seeding parameters used by the model loop

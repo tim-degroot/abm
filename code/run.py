@@ -62,21 +62,21 @@ def run_simulation(config=None, n_steps=None, verbose=True):
             inst_share = latest["institutional_ownership_share"]
             mp_share = latest["household_marginal_pricer_share"]
             avg_r = latest["avg_rent"]
+            macro_state = getattr(model, "current_macro_state", "Neutral")
 
-            price_str = (
-                f"{avg_price:>10,.0f}" if avg_price == avg_price else "       N/A"
-            )
-            mp_str = f"{mp_share:.2f}" if mp_share == mp_share else "  N/A"
-            rent_str = f"{avg_r:>8,.0f}" if avg_r == avg_r else "     N/A"
+            price_str = f"{avg_price:,.0f}" if avg_price == avg_price else "N/A"
+            mp_str = f"{mp_share:.2f}" if mp_share == mp_share else "N/A"
+            rent_str = f"{avg_r:,.0f}" if avg_r == avg_r else "N/A"
 
             print(
                 f"Step {step+1:>3} | "
-                f"AvgPrice: {price_str} | "
-                f"Vol: {vol:>3} | "
-                f"OwnRate: {own_rate:.2f} | "
-                f"InstShare: {inst_share:.2f} | "
-                f"HH_MP: {mp_str} | "
-                f"AvgRent: {rent_str}"
+                f"AvgPrice: {price_str:>12} | "
+                f"Vol: {vol:>5} | "
+                f"OwnRate: {own_rate:>5.2f} | "
+                f"InstShare: {inst_share:>5.2f} | "
+                f"HH_MP: {mp_str:>6} | "
+                f"AvgRent: {rent_str:>10} | "
+                f"Macro: {macro_state}"
             )
 
     print("=" * 60)

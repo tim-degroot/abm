@@ -434,12 +434,25 @@ class HouseholdAgent(mesa.Agent):
     def evolve_income(self):
         """
         Apply one period of income evolution.
-
-        Apply multiplicative income growth draws each period (no mean
-        reversion) per plan: income_t+1 = income_t * exp(shock).
+        Apply multiplicative income growth draws each period driven by the
+        current macro state. This replaces any mean-reversion rule and uses
+        state-specific growth mean and volatility from config.macro.
         """
-        acfg = self.model.config.agent
-        shock = self.model.rng.normal(0.0, acfg.income_shock_sd)
+        mcfg = getattr(self.model.config, "macro", None)
+        state = getattr(self.model, "current_macro_state", "Neutral")
+        if mcfg is None:
+            raise RuntimeError(
+                "Missing [macro] section in config; macro-driven income shocks are required."
+            )
+        match state:
+            case "Boom":
+                mu, sd = mcfg.boom_mean, mcfg.boom_sd
+            case "Recession":
+                mu, sd = mcfg.recession_mean, mcfg.recession_sd
+            case _:
+                mu, sd = mcfg.neutral_mean, mcfg.neutral_sd
+        shock = float(self.model.rng.normal(mu, sd))
+
         self.income = float(self.income * np.exp(shock))
 
     # ------------------------------------------------------------------

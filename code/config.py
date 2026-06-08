@@ -100,7 +100,6 @@ class AgentConfig:
     beta_action: float = 1.0
     beta_property: float = 0.5
     income_reversion: float = 0.05
-    income_shock_sd: float = 0.05
     sell_score_offset: float = 0.02
     inst_sell_score_offset: float = 0.01
     inst_ltv: float = 0.60
@@ -213,6 +212,28 @@ class DebugConfig:
     enable_bid_logging: bool = False
 
 
+@dataclass(frozen=True)
+class MacroConfig:
+    """Simple macro state growth parameters used for income shocks."""
+    initial_state: str = "Neutral"  # Boom | Neutral | Recession
+    boom_mean: float = 0.03
+    boom_sd: float = 0.02
+    neutral_mean: float = 0.01
+    neutral_sd: float = 0.01
+    recession_mean: float = -0.02
+    recession_sd: float = 0.03
+    # Markov transition probabilities (row-stochastic: from-state -> to-state)
+    boom_to_boom: float = 0.80
+    boom_to_neutral: float = 0.15
+    boom_to_recession: float = 0.05
+    neutral_to_boom: float = 0.05
+    neutral_to_neutral: float = 0.90
+    neutral_to_recession: float = 0.05
+    recession_to_boom: float = 0.05
+    recession_to_neutral: float = 0.15
+    recession_to_recession: float = 0.80
+
+
 # ---------------------------------------------------------------------------
 # Top-level config
 # ---------------------------------------------------------------------------
@@ -228,6 +249,7 @@ _SECTIONS = {
     "valuation": ("valuation", ValuationConfig),
     "expectations": ("expectations", ExpectationsConfig),
     "market": ("market", MarketConfig),
+    "macro": ("macro", MacroConfig),
     "debug": ("debug", DebugConfig),
 }
 
@@ -245,6 +267,7 @@ class Config:
     valuation: ValuationConfig = ValuationConfig()
     expectations: ExpectationsConfig = ExpectationsConfig()
     market: MarketConfig = MarketConfig()
+    macro: MacroConfig = MacroConfig()
     debug: DebugConfig = DebugConfig()
 
 
