@@ -73,6 +73,24 @@ def household_ownership_share_of_stock(model):
     return hh_owned / total
 
 
+def unhoused_households(model):
+    """
+    Number of households with no home this step (home_property is None).
+
+    A diagnostic for the rehousing loop: every unhoused household must be an
+    active rental searcher (see model._get_rental_candidates), so this count
+    should CHURN around a modest level, not grow unbounded. Unbounded growth
+    means agents are stuck unable to re-house — i.e. the rematch is broken.
+    """
+    from agents import HouseholdAgent
+
+    return sum(
+        1
+        for a in model.agents
+        if isinstance(a, HouseholdAgent) and a.home_property is None
+    )
+
+
 def avg_winning_bid(model):
     """Mean winning (highest) bid submitted this step."""
     txns = model.this_step_transactions
@@ -182,4 +200,5 @@ MODEL_REPORTERS = {
     "debug_avg_ownership_bid": debug_avg_ownership_bid,
     "household_ownership_share_of_stock": household_ownership_share_of_stock,
     "ceiling_bind_rate": ceiling_bind_rate,
+    "unhoused_households": unhoused_households,
 }

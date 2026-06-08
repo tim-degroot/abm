@@ -1366,16 +1366,29 @@ class HousingModel(mesa.Model):
         return home.tenancy_quarters < self.config.market.min_lease_quarters
 
     def _get_rental_candidates(self, agent):
-        """Properties listed for rent in agent's search zones (not self-owned)."""
-        zones = self.get_search_zones(agent.home_zone)
-        return [
+        """
+        Listed, vacant rentals the agent can bid on (never one it owns).
+
+        An UNHOUSED household (no owned home AND no active lease, i.e.
+        home_property is None) is not tied to any neighbourhood, so it searches
+        the ENTIRE market — guaranteeing it is always an active rental searcher
+        and can re-house whenever any rental supply exists. This is what stops
+        agents who lose their home (distress sale, lease non-renewal) from
+        silently dropping out of the market because their home zone happens to
+        have no vacancies. A housed renter looking to move stays restricted to
+        its local search zones.
+        """
+        listed = [
             p
             for p in self.properties
-            if p.zone in zones
-            and p.listed_for_rent
+            if p.listed_for_rent
             and p.occupant_id is None
             and p.owner_id != agent.unique_id
         ]
+        if agent.home_property is None:
+            return listed  # unhoused: search the whole market
+        zones = self.get_search_zones(agent.home_zone)
+        return [p for p in listed if p.zone in zones]
 
     def _reservation_rent(self, prop):
         """
@@ -1447,6 +1460,20 @@ class HousingModel(mesa.Model):
                 prop.occupant_id = None
 
             seller.release_property(prop, txn.price)
+
+            # If the seller was OCCUPYING the unit (an owner-occupier selling the
+            # home they live in — e.g. a distress sale), the eviction block above
+            # was skipped because the occupant was the seller. They are now
+            # unhoused: explicitly reset their housing state to "searching" and
+            # clear the unit's occupancy so it does not keep the departed seller
+            # as a ghost occupant. This guarantees the seller re-enters the rental
+            # search next step (see _get_rental_candidates) instead of silently
+            # dropping out. If the buyer moves in, acquire_property re-sets
+            # occupant_id below.
+            if prop.occupant_id == txn.seller_id:
+                prop.occupant_id = None
+                if isinstance(seller, HouseholdAgent):
+                    seller.home_property = None
 
             prop.owner_id = txn.buyer_id
             prop.purchase_anchor_price = txn.price
