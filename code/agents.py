@@ -41,6 +41,7 @@ from valuation import (
     investor_wtp,
     household_max_rent,
     estimate_market_rent,
+    expected_capital_gain,
 )
 
 # All tunable parameters now live in config.py / config.toml and are read via
@@ -461,7 +462,18 @@ class HouseholdAgent(mesa.Agent):
             if self.model._price_history
             else prop.estimated_value
         )
-        capital_gain = self.expected_price_growth * market_price
+        # Expected capital gain via the configured mode, which breaks the
+        # realised-price -> WTP -> realised-price feedback loop. In
+        # "bounded_growth" mode the growth rate is sourced from the agent's
+        # rent-growth expectation (income-driven), not the price EMA.
+        capital_gain = expected_capital_gain(
+            cfg.valuation.capital_gain_mode,
+            market_price,
+            fixed_level=cfg.valuation.expected_capital_gain_level,
+            growth_signal=self.expected_rent_growth,
+            growth_min=cfg.valuation.capital_gain_growth_min,
+            growth_max=cfg.valuation.capital_gain_growth_max,
+        )
         annual_rent = (
             estimate_market_rent(
                 prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
@@ -724,7 +736,16 @@ class InstitutionalAgent(mesa.Agent):
             if self.model._price_history
             else prop.estimated_value
         )
-        capital_gain = self.expected_price_growth * market_price
+        # Same configured capital-gain treatment as households (see helper):
+        # "fixed_level" or rent-sourced "bounded_growth" to break the price loop.
+        capital_gain = expected_capital_gain(
+            cfg.valuation.capital_gain_mode,
+            market_price,
+            fixed_level=cfg.valuation.expected_capital_gain_level,
+            growth_signal=self.expected_rent_growth,
+            growth_min=cfg.valuation.capital_gain_growth_min,
+            growth_max=cfg.valuation.capital_gain_growth_max,
+        )
         net_rent = (
             estimate_market_rent(
                 prop.quality, avg_rent, cfg.valuation.quality_sensitivity

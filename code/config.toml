@@ -144,6 +144,16 @@ rent_income_fraction    = 0.35   # max share of income spent on rent (= credit.r
 quality_sensitivity     = 0.3    # elasticity of achievable rent to property quality
 operating_cost_fraction = 0.15   # operating costs as a fraction of rent (landlords & institutions)
 quality_value_scale     = 1.0    # owner-occupier consumption value of a home as a multiple of its annual market rent (kappa)
+# Expected capital gain E[dp] in the WTP numerator (plan §11). Two modes break the
+# explosive realised-price -> WTP -> realised-price feedback loop (A/B testable):
+#   "fixed_level"    — E[dp] = expected_capital_gain_level (£/period), independent of price.
+#   "bounded_growth" — E[dp] = g * market_price, with g CLAMPED to
+#                      [capital_gain_growth_min, capital_gain_growth_max] and sourced from
+#                      the rent-growth/macro signal (income-driven), NOT the realised-price EMA.
+capital_gain_mode           = "fixed_level"
+expected_capital_gain_level = 2000.0   # £/period; used in "fixed_level" mode (plan §11: modest level)
+capital_gain_growth_min     = -0.02    # per-period growth clamp (lower); used in "bounded_growth" mode
+capital_gain_growth_max     = 0.02     # per-period growth clamp (upper); used in "bounded_growth" mode
 
 # -----------------------------------------------------------------------------
 # [expectations] — adaptive expectation formation (plan.md §7)

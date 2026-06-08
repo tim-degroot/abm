@@ -131,6 +131,17 @@ class ValuationConfig:
     quality_sensitivity: float = 0.3
     operating_cost_fraction: float = 0.15
     quality_value_scale: float = 1.0
+    # Expected capital gain E[dp] in the WTP numerator (plan §11). Two modes
+    # break the explosive realised-price -> WTP -> realised-price feedback loop:
+    #   "fixed_level"    — constant £ level per period (`expected_capital_gain_level`),
+    #                      independent of price.
+    #   "bounded_growth" — g * market_price, with g clamped to
+    #                      [capital_gain_growth_min, capital_gain_growth_max] and
+    #                      sourced from the rent-growth/macro signal, not the price EMA.
+    capital_gain_mode: str = "fixed_level"
+    expected_capital_gain_level: float = 2000.0
+    capital_gain_growth_min: float = -0.02
+    capital_gain_growth_max: float = 0.02
 
 
 @dataclass(frozen=True)
@@ -368,6 +379,17 @@ def _validate(cfg: Config) -> None:
         raise ValueError(
             f"valuation.quality_value_scale must be >= 0, got "
             f"{cfg.valuation.quality_value_scale}"
+        )
+    if cfg.valuation.capital_gain_mode not in ("fixed_level", "bounded_growth"):
+        raise ValueError(
+            f"valuation.capital_gain_mode must be 'fixed_level' or 'bounded_growth', "
+            f"got {cfg.valuation.capital_gain_mode!r}"
+        )
+    if cfg.valuation.capital_gain_growth_min > cfg.valuation.capital_gain_growth_max:
+        raise ValueError(
+            f"valuation.capital_gain_growth_min "
+            f"({cfg.valuation.capital_gain_growth_min}) must be <= "
+            f"capital_gain_growth_max ({cfg.valuation.capital_gain_growth_max})."
         )
     _frac("expectations.delta", cfg.expectations.delta)
     if cfg.expectations.signal_window < 2:

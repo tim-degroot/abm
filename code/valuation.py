@@ -83,6 +83,49 @@ def investor_wtp(annual_net_rent, capital_gain, funding_rate, ltv):
     return max(0.0, (annual_net_rent + capital_gain) / denom)
 
 
+def expected_capital_gain(
+    mode,
+    market_price,
+    *,
+    fixed_level,
+    growth_signal,
+    growth_min,
+    growth_max,
+):
+    """
+    Expected per-period capital gain E[dp], in £, for the WTP numerator (plan §11).
+
+    The naive form `expected_price_growth * market_price` creates an explosive
+    feedback loop: realised price -> growth signal -> expectation -> WTP ->
+    realised price, with no anchor (it produced £10M houses). Two configurable
+    modes break that loop (config: valuation.capital_gain_mode):
+
+    - "fixed_level":   a constant £ level per period (`fixed_level`), entirely
+                       independent of the price. Matches plan §11, where E[dp] is
+                       a modest per-period £ amount, not growth * price.
+
+    - "bounded_growth": keep the proportional form `g * market_price` (prices do
+                       grow roughly proportionally), but (a) CLAMP g to
+                       [growth_min, growth_max], and (b) SOURCE g from
+                       `growth_signal` — the rent-growth / macro signal — never
+                       from the realised-price EMA. Because g no longer depends on
+                       the realised price, the price cannot drive its own
+                       expectation and the loop is broken. (Until the macro state
+                       machine lands, `growth_signal` is the agent's adaptive
+                       rent-growth expectation, which is income- not price-driven.)
+
+    market_price : the current market price level the gain is taken against (£).
+    """
+    if mode == "fixed_level":
+        return fixed_level
+    if mode == "bounded_growth":
+        g = min(growth_max, max(growth_min, growth_signal))
+        return g * market_price
+    raise ValueError(
+        f"Unknown capital_gain_mode {mode!r}; expected 'fixed_level' or 'bounded_growth'."
+    )
+
+
 def estimate_market_rent(quality, base_rent, quality_sensitivity):
     """Expected market rent for a property: base rent scaled up with quality."""
     return base_rent * (1.0 + quality_sensitivity * quality)
