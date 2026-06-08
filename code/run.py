@@ -11,6 +11,7 @@ Outputs a CSV of collected data to housing_abm_results.csv.
 
 import os
 import sys
+import argparse
 
 # Ensure the housing_abm directory is on the path when run from project root
 sys.path.insert(0, os.path.dirname(__file__))
@@ -161,10 +162,20 @@ def run_credit_shock_experiment(config=None, n_steps=40):
 
 
 if __name__ == "__main__":
-    cfg = load_config()
+    parser = argparse.ArgumentParser(description="Run the Housing Market ABM")
+    parser.add_argument("--steps", "-s", type=int, help="number of simulation steps to run")
+    parser.add_argument("--seed", type=int, help="override RNG seed in config")
+    args = parser.parse_args()
 
-    # Baseline run
-    model = run_simulation(config=cfg, verbose=True)
+    cfg = load_config()
+    if args.seed is not None:
+        try:
+            cfg.sim.seed = int(args.seed)
+        except Exception:
+            pass
+
+    # Baseline run (allow --steps override)
+    model = run_simulation(config=cfg, n_steps=args.steps, verbose=True)
 
     # Marginal-pricer experiment
     run_credit_shock_experiment(config=cfg, n_steps=40)
