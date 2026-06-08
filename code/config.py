@@ -193,6 +193,12 @@ class MarketConfig:
     # but uncommon real-life cases (break clauses, relocation, distress,
     # eviction). Set to 0.0 to forbid early exit entirely (hard minimum term).
     lease_early_exit_prob: float = 0.01
+    # Per-step probability that a HOUSED renter (past its lease term) voluntarily
+    # re-enters the rental search and moves if a strictly better option exists.
+    # Kept low so renters re-evaluate occasionally — not every quarter — which
+    # keeps the rental market competitive (price discovery) without unrealistic
+    # churn. Set 0.0 to disable voluntary moves entirely.
+    renter_research_prob: float = 0.07
     # Loss aversion parameters (owner-occupiers and private landlords).
     loss_aversion_owner: float = 1.30
     loss_aversion_landlord: float = 1.15
@@ -439,6 +445,7 @@ def _validate(cfg: Config) -> None:
     _frac("market.inst_sell_reservation_discount", m.inst_sell_reservation_discount)
     _frac("market.lease_expiry_prob", m.lease_expiry_prob)
     _frac("market.lease_early_exit_prob", m.lease_early_exit_prob)
+    _frac("market.renter_research_prob", m.renter_research_prob)
     if m.min_lease_quarters < 0:
         raise ValueError(
             f"market.min_lease_quarters must be >= 0, got {m.min_lease_quarters}"

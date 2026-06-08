@@ -1067,22 +1067,43 @@ class HousingModel(mesa.Model):
                                 self._debug_counts["ownership_bids_submitted"] += 1
                                 self._debug_counts["ownership_bid_samples"].append(bid)
 
-                # Rental bid — allow current renters to search for new rentals
-                # (move desire), or agents that explicitly chose 'rent', or
-                # unhoused agents. BUT a housed tenant still inside its minimum
-                # lease term is locked in and cannot voluntarily move out yet
-                # (the unhoused always search; tenants past the term may move at
-                # renewal). This mirrors the turnover restriction in
-                # _expire_leases so the minimum tenure holds for both mechanisms.
-                wants_rental = (
-                    action == "rent"
-                    or agent.home_property is None
-                    or agent.is_renter
-                )
-                if wants_rental and self._tenant_locked_in(agent):
+                # Rental bid. Who searches for a rental this step:
+                #  - Unhoused households: always (they need a home).
+                #  - Housed renters still inside the minimum lease term: never
+                #    (locked in — see _tenant_locked_in / _expire_leases).
+                #  - Housed renters PAST the term: only occasionally, with low
+                #    probability `renter_research_prob` (voluntary re-search), and
+                #    then move only to a STRICTLY better option. This keeps the
+                #    market competitive (price discovery on turnover) without
+                #    unrealistic every-quarter moving.
+                #  - Others (owner-occupiers) only if they explicitly chose rent.
+                voluntary_move = False
+                if agent.home_property is None:
+                    wants_rental = True
+                elif self._tenant_locked_in(agent):
                     wants_rental = False
+                elif agent.is_renter:
+                    wants_rental = (
+                        self.rng.random()
+                        < self.config.market.renter_research_prob
+                    )
+                    voluntary_move = wants_rental
+                else:
+                    wants_rental = action == "rent"
+
                 if wants_rental:
                     rental_candidates = self._get_rental_candidates(agent)
+                    # A voluntary mover only considers options strictly better
+                    # than its current home (higher quality); otherwise it stays
+                    # put. The unhoused take any available rental.
+                    if voluntary_move and rental_candidates:
+                        current = self._property_map.get(agent.home_property)
+                        if current is not None:
+                            rental_candidates = [
+                                p
+                                for p in rental_candidates
+                                if p.quality > current.quality
+                            ]
                     if not rental_candidates:
                         # nothing to bid on
                         pass
