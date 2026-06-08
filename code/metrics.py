@@ -150,6 +150,19 @@ def debug_avg_ownership_bid(model):
     return float(sum(samples) / len(samples))
 
 
+def ceiling_bind_rate(model):
+    """
+    Cumulative share of ownership bids capped by the fundamentals (price-to-income
+    / price-to-rent) safety net. The ceiling should be a rarely-binding backstop:
+    a value > ~0.5 means the expectation damping is too weak and the ceiling — not
+    economics — is setting prices.
+    """
+    n = getattr(model, "_ceiling_bid_count", 0)
+    if n == 0:
+        return float("nan")
+    return model._ceiling_bind_count / n
+
+
 # Mapping passed to Mesa DataCollector
 MODEL_REPORTERS = {
     "avg_sale_price": avg_sale_price,
@@ -168,4 +181,5 @@ MODEL_REPORTERS = {
     "debug_ownership_bids_filtered": debug_ownership_bids_filtered,
     "debug_avg_ownership_bid": debug_avg_ownership_bid,
     "household_ownership_share_of_stock": household_ownership_share_of_stock,
+    "ceiling_bind_rate": ceiling_bind_rate,
 }

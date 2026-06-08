@@ -142,6 +142,13 @@ class ValuationConfig:
     expected_capital_gain_level: float = 2000.0
     capital_gain_growth_min: float = -0.02
     capital_gain_growth_max: float = 0.02
+    # Fundamentals ceilings: a hard SAFETY NET on the FINAL bid, anchored to the
+    # bidder's real economic capacity, applied as the last step of WTP. They
+    # guarantee no bid detaches from fundamentals regardless of the expectation
+    # term. Households: price <= max_price_to_income * income. Yield investors
+    # (landlords + institutions): price <= max_price_to_rent * gross annual rent.
+    max_price_to_income: float = 4.5
+    max_price_to_rent: float = 25.0
 
 
 @dataclass(frozen=True)
@@ -391,6 +398,8 @@ def _validate(cfg: Config) -> None:
             f"({cfg.valuation.capital_gain_growth_min}) must be <= "
             f"capital_gain_growth_max ({cfg.valuation.capital_gain_growth_max})."
         )
+    _pos("valuation.max_price_to_income", cfg.valuation.max_price_to_income)
+    _pos("valuation.max_price_to_rent", cfg.valuation.max_price_to_rent)
     _frac("expectations.delta", cfg.expectations.delta)
     if cfg.expectations.signal_window < 2:
         raise ValueError(

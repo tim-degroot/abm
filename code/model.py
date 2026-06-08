@@ -154,6 +154,13 @@ class HousingModel(mesa.Model):
         self._debug_bid_log = []
         self._debug_rental_bid_log = []
 
+        # Fundamentals-ceiling bind tracking (cumulative across the run). Counts
+        # how often the price-to-income / price-to-rent safety net caps the final
+        # bid below the belief-driven computed WTP. A high rate means the
+        # expectation damping is doing too little (see ceiling_bind_rate metric).
+        self._ceiling_bind_count = 0
+        self._ceiling_bid_count = 0
+
         self.all_transactions = []
         self.all_rental_transactions = []
 
@@ -288,6 +295,16 @@ class HousingModel(mesa.Model):
 
     def get_search_zones(self, home_zone):
         return self._zone_adjacency[home_zone]
+
+    def _record_ceiling_bind(self, bound):
+        """Record one ownership bid and whether the fundamentals ceiling capped it.
+
+        Called once per constructed bid (from each agent's compute_bid). Drives
+        the `ceiling_bind_rate` metric — the safety net should bind rarely.
+        """
+        self._ceiling_bid_count += 1
+        if bound:
+            self._ceiling_bind_count += 1
 
     # ------------------------------------------------------------------
     # Initialisation

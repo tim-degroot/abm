@@ -154,6 +154,12 @@ capital_gain_mode           = "fixed_level"
 expected_capital_gain_level = 2000.0   # £/period; used in "fixed_level" mode (plan §11: modest level)
 capital_gain_growth_min     = -0.02    # per-period growth clamp (lower); used in "bounded_growth" mode
 capital_gain_growth_max     = 0.02     # per-period growth clamp (upper); used in "bounded_growth" mode
+# Fundamentals ceilings — a hard SAFETY NET on the FINAL bid, anchored to the bidder's
+# real economic capacity (applied as the last step of WTP, after all belief terms). They
+# guarantee no bid can detach from fundamentals. Should bind rarely: if the bind-rate
+# metric exceeds ~50%, the expectation damping (capital_gain_mode) is doing too little.
+max_price_to_income = 4.5    # households: price <= this * annual income (realistic UK value)
+max_price_to_rent   = 25.0   # landlords + institutions: price <= this * gross annual rent
 
 # -----------------------------------------------------------------------------
 # [expectations] — adaptive expectation formation (plan.md §7)
