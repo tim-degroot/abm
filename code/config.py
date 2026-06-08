@@ -108,6 +108,17 @@ class AgentConfig:
     # valuing expected capital gains. This prevents unrealistically large WTP
     # driven solely by low funding rates.
     inst_required_return: float = 0.03
+    # Activity hurdle: an institution only bids on a
+    # property whose expected GROSS rental yield (annual rent / price) clears this
+    # threshold — so it chases the high-yield corner, not the whole market. Set
+    # at the top of the plan §19 calibration band (4–5% gross yield): institutions
+    # require at least a market yield. This produces the plan §2.3 marginal-pricer
+    # switch — under loose credit households out-bid institutions on most stock
+    # (they win ~80% of auctions); after a credit tightening, household ceilings
+    # collapse and institutions take over the marginal bid (they win ~70%+).
+    # (Empirically a 0.06 hurdle is too high — loose-baseline yields are ~4.5%, so
+    # institutions never activate and no switch occurs.)
+    inst_min_yield: float = 0.05
     # Maximum number of institutional ownership bids allowed per model step.
     # Set to a large value to disable (default = n_properties), or lower to
     # throttle institutional purchase activity and prevent rapid sell-offs.
@@ -380,6 +391,7 @@ def _validate(cfg: Config) -> None:
         )
 
     _frac("agent.inst_ltv", cfg.agent.inst_ltv)
+    _frac("agent.inst_min_yield", cfg.agent.inst_min_yield)
     _frac("valuation.rent_income_fraction", cfg.valuation.rent_income_fraction)
     _frac("valuation.operating_cost_fraction", cfg.valuation.operating_cost_fraction)
     if cfg.valuation.quality_value_scale < 0:

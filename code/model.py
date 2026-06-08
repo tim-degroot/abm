@@ -59,6 +59,7 @@ from credit import CreditEnvironment
 from markets import OwnershipMarket, RentalMarket
 from policies import NoPolicy
 from expectations import price_growth_signal, rent_growth_signal
+from valuation import estimate_market_rent
 from metrics import MODEL_REPORTERS
 
 
@@ -1136,6 +1137,9 @@ class HousingModel(mesa.Model):
                         for pid in distressed_ids
                         if self._property_map[pid].listed_for_sale
                         and self._property_map[pid].owner_id != agent.unique_id
+                        # Activity hurdle applies to fire-sales too: institutions
+                        # only snap up distressed stock in the high-yield corner.
+                        and self._inst_yield_ok(self._property_map[pid], avg_rent)
                         and self._purchase_feasible(agent, self._property_map[pid])
                     ]
                     if not candidates:
@@ -1180,6 +1184,33 @@ class HousingModel(mesa.Model):
     # Candidate set construction
     # ------------------------------------------------------------------
 
+    def _inst_expected_yield(self, prop, avg_rent):
+        """
+        Gross expected rental yield an institution would earn on a property:
+        expected gross annual rent / current price. Drives the activity hurdle: institutions only chase the high-yield corner,
+        so under loose credit (high prices ⇒ low yields) they sit out and leave
+        the marginal bid to leveraged households, while under tight credit
+        (depressed prices ⇒ high yields) they step in — the plan §2.3 regime
+        switch.
+        """
+        price = prop.estimated_value
+        if price <= 0:
+            return 0.0
+        gross_annual_rent = (
+            estimate_market_rent(
+                prop.quality, avg_rent, self.config.valuation.quality_sensitivity
+            )
+            * 12.0
+        )
+        return gross_annual_rent / price
+
+    def _inst_yield_ok(self, prop, avg_rent):
+        """True iff the property clears the institutional activity hurdle."""
+        return (
+            self._inst_expected_yield(prop, avg_rent)
+            >= self.config.agent.inst_min_yield
+        )
+
     def _get_purchase_candidates(self, agent, distress_sales=None):
         """Households search locally; institutions see all sale listings."""
         if isinstance(agent, InstitutionalAgent):
@@ -1187,6 +1218,9 @@ class HousingModel(mesa.Model):
                 p
                 for p in self.properties
                 if p.listed_for_sale and p.owner_id != agent.unique_id
+                # Activity hurdle: only bid where expected yield >= inst_min_yield.
+                # Below the threshold the institution does not bid at all.
+                and self._inst_yield_ok(p, self._avg_rent)
             ]
         else:
             zones = self.get_search_zones(agent.home_zone)
