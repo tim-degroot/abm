@@ -81,7 +81,8 @@ class HousingModel(mesa.Model):
         self.config = config if config is not None else load_config()
         cfg = self.config
 
-        super().__init__(seed=cfg.sim.seed)
+        # Use a NumPy Generator for `model.rng` (pass via `rng` to avoid FutureWarning)
+        super().__init__(rng=np.random.default_rng(cfg.sim.seed))
 
         assert (
             cfg.sim.n_properties > cfg.sim.n_households
