@@ -43,6 +43,9 @@ def household_wtp(
     mortgage_rate,
     ltv,
     credit_ceiling,
+    *,
+    max_price_to_income,
+    income,
 ):
     """
     Owner-occupier break-even price (plan §6, §11):
@@ -50,22 +53,46 @@ def household_wtp(
         p_max = ( q_k + E[dp] - V_outside ) / ( r_m * L )
 
     then capped at the household's credit ceiling (plan §9: whichever of the
-    deposit or income constraint binds first).
+    deposit or income constraint binds first), and finally at a fundamentals
+    ceiling — a price-to-income multiple of the bidder's income. The
+    fundamentals ceiling is a hard SAFETY NET on the final bid: it guarantees no
+    bid can detach from the bidder's real economic capacity regardless of what
+    the expectation/belief terms produce. It is not a constraint on beliefs.
 
     quality_value        : q_k, annual £ value of the home's quality consumption
     capital_gain         : E[dp], expected annual £ price appreciation
     outside_option_value : V_outside, annual £ value of the renter alternative
     mortgage_rate        : r_m            ltv : L, loan-to-value
     credit_ceiling       : max affordable price from the credit constraints
+    max_price_to_income  : fundamentals ceiling = this * income
+    income               : bidder's annual income (£)
+
+    Returns (wtp, ceiling_bound) where ceiling_bound is True iff the
+    fundamentals (price-to-income) ceiling sits below the formula-computed price
+    — i.e. the safety net, not economics, is capping the raw computed WTP.
     """
     denom = mortgage_rate * ltv
     if denom <= 0:
-        return credit_ceiling
-    price = (quality_value + capital_gain - outside_option_value) / denom
-    return max(0.0, min(price, credit_ceiling))
+        raw = float("inf")
+    else:
+        raw = (quality_value + capital_gain - outside_option_value) / denom
+
+    income_ceiling = max_price_to_income * income
+    ceiling_bound = income_ceiling < raw
+
+    price = min(raw, credit_ceiling, income_ceiling)
+    return max(0.0, price), ceiling_bound
 
 
-def investor_wtp(annual_net_rent, capital_gain, funding_rate, ltv):
+def investor_wtp(
+    annual_net_rent,
+    capital_gain,
+    funding_rate,
+    ltv,
+    *,
+    max_price_to_rent,
+    expected_annual_rent,
+):
     """
     Break-even price for a yield investor — private landlord OR institution
     (plan §11). Same formula for both; they differ only in funding_rate
@@ -73,14 +100,73 @@ def investor_wtp(annual_net_rent, capital_gain, funding_rate, ltv):
 
         p_max = ( R - phi + E[dp] ) / ( r_f * L )
 
-    annual_net_rent : R - phi, expected annual rent net of operating costs (£)
-    capital_gain    : E[dp], expected annual £ price appreciation
-    funding_rate    : r_f (or r_f^BTL)      ltv : L, loan-to-value
+    capped at a fundamentals ceiling — a price-to-rent multiple of the
+    property's expected gross annual rent. As in household_wtp, this is a hard
+    SAFETY NET on the final bid anchored to the asset's real income capacity,
+    not a constraint on beliefs.
+
+    annual_net_rent      : R - phi, expected annual rent net of operating costs (£)
+    capital_gain         : E[dp], expected annual £ price appreciation
+    funding_rate         : r_f (or r_f^BTL)      ltv : L, loan-to-value
+    max_price_to_rent    : fundamentals ceiling = this * expected_annual_rent
+    expected_annual_rent : R, expected GROSS annual rent of the property (£)
+
+    Returns (wtp, ceiling_bound) where ceiling_bound is True iff the
+    fundamentals (price-to-rent) ceiling sits below the formula-computed price.
     """
     denom = funding_rate * ltv
     if denom <= 0:
-        return float("inf")
-    return max(0.0, (annual_net_rent + capital_gain) / denom)
+        raw = float("inf")
+    else:
+        raw = (annual_net_rent + capital_gain) / denom
+
+    rent_ceiling = max_price_to_rent * expected_annual_rent
+    ceiling_bound = rent_ceiling < raw
+
+    return max(0.0, min(raw, rent_ceiling)), ceiling_bound
+
+
+def expected_capital_gain(
+    mode,
+    market_price,
+    *,
+    fixed_level,
+    growth_signal,
+    growth_min,
+    growth_max,
+):
+    """
+    Expected per-period capital gain E[dp], in £, for the WTP numerator (plan §11).
+
+    The naive form `expected_price_growth * market_price` creates an explosive
+    feedback loop: realised price -> growth signal -> expectation -> WTP ->
+    realised price, with no anchor (it produced £10M houses). Two configurable
+    modes break that loop (config: valuation.capital_gain_mode):
+
+    - "fixed_level":   a constant £ level per period (`fixed_level`), entirely
+                       independent of the price. Matches plan §11, where E[dp] is
+                       a modest per-period £ amount, not growth * price.
+
+    - "bounded_growth": keep the proportional form `g * market_price` (prices do
+                       grow roughly proportionally), but (a) CLAMP g to
+                       [growth_min, growth_max], and (b) SOURCE g from
+                       `growth_signal` — the rent-growth / macro signal — never
+                       from the realised-price EMA. Because g no longer depends on
+                       the realised price, the price cannot drive its own
+                       expectation and the loop is broken. (Until the macro state
+                       machine lands, `growth_signal` is the agent's adaptive
+                       rent-growth expectation, which is income- not price-driven.)
+
+    market_price : the current market price level the gain is taken against (£).
+    """
+    if mode == "fixed_level":
+        return fixed_level
+    if mode == "bounded_growth":
+        g = min(growth_max, max(growth_min, growth_signal))
+        return g * market_price
+    raise ValueError(
+        f"Unknown capital_gain_mode {mode!r}; expected 'fixed_level' or 'bounded_growth'."
+    )
 
 
 def estimate_market_rent(quality, base_rent, quality_sensitivity):

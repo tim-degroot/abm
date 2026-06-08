@@ -41,6 +41,7 @@ from valuation import (
     investor_wtp,
     household_max_rent,
     estimate_market_rent,
+    expected_capital_gain,
 )
 
 # All tunable parameters now live in config.py / config.toml and are read via
@@ -270,7 +271,9 @@ class HouseholdAgent(mesa.Agent):
 
     def compute_bid(self, prop, avg_market_rent):
         """Truthful WTP bid for ownership."""
-        return self._wtp_for_property(prop, avg_market_rent, self.model.credit)
+        return self._wtp_for_property(
+            prop, avg_market_rent, self.model.credit, record_bind=True
+        )
 
     def compute_rent_bid(self):
         """Maximum monthly rent bid (affordability ceiling)."""
@@ -312,7 +315,18 @@ class HouseholdAgent(mesa.Agent):
 
         # Move in if currently unhoused or renting
         if not self.is_owner_occupier:
-            # Leave current rental if any (occupant_id cleared by model)
+            # Free the rental unit being vacated so it does not keep a stale
+            # occupant pointing at this buyer (which would double-occupy).
+            old_home = self.home_property
+            if (
+                old_home is not None
+                and old_home != prop.id
+                and old_home not in self.owned_properties
+            ):
+                old_prop = self.model._property_map.get(old_home)
+                if old_prop is not None and old_prop.occupant_id == self.unique_id:
+                    old_prop.occupant_id = None
+                    old_prop.listed_for_rent = True
             self.home_property = prop.id
             self.home_zone = prop.zone
             prop.occupant_id = self.unique_id
@@ -449,7 +463,7 @@ class HouseholdAgent(mesa.Agent):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _wtp_for_property(self, prop, avg_market_rent, credit):
+    def _wtp_for_property(self, prop, avg_market_rent, credit, record_bind=False):
         cfg = self.model.config
         # Exogenous expected capital gain (£).
         # Use the market-level recent average price as the base for expected
@@ -461,7 +475,18 @@ class HouseholdAgent(mesa.Agent):
             if self.model._price_history
             else prop.estimated_value
         )
-        capital_gain = self.expected_price_growth * market_price
+        # Expected capital gain via the configured mode, which breaks the
+        # realised-price -> WTP -> realised-price feedback loop. In
+        # "bounded_growth" mode the growth rate is sourced from the agent's
+        # rent-growth expectation (income-driven), not the price EMA.
+        capital_gain = expected_capital_gain(
+            cfg.valuation.capital_gain_mode,
+            market_price,
+            fixed_level=cfg.valuation.expected_capital_gain_level,
+            growth_signal=self.expected_rent_growth,
+            growth_min=cfg.valuation.capital_gain_growth_min,
+            growth_max=cfg.valuation.capital_gain_growth_max,
+        )
         annual_rent = (
             estimate_market_rent(
                 prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
@@ -471,11 +496,19 @@ class HouseholdAgent(mesa.Agent):
         if self.is_owner_occupier:
             # Already housed → an extra purchase is buy-to-let (landlord, plan §11).
             net_rent = annual_rent * (1.0 - cfg.valuation.operating_cost_fraction)
-            wtp = investor_wtp(
-                net_rent, capital_gain, cfg.credit.btl_funding_rate, cfg.credit.btl_ltv
+            wtp, bound = investor_wtp(
+                net_rent,
+                capital_gain,
+                cfg.credit.btl_funding_rate,
+                cfg.credit.btl_ltv,
+                max_price_to_rent=cfg.valuation.max_price_to_rent,
+                expected_annual_rent=annual_rent,
             )
             # Private landlords are still credit-constrained (unlike institutions).
-            return min(wtp, credit.max_affordable_price(self.cash, self.income))
+            wtp = min(wtp, credit.max_affordable_price(self.cash, self.income))
+            if record_bind:
+                self.model._record_ceiling_bind(bound)
+            return wtp
 
         # Owner-occupier purchase: value = quality consumption + capital gain.
         quality_value = cfg.valuation.quality_value_scale * annual_rent
@@ -505,14 +538,19 @@ class HouseholdAgent(mesa.Agent):
 
         outside_option = cfg.valuation.quality_value_scale * best_rent_ann
 
-        return household_wtp(
+        wtp, bound = household_wtp(
             quality_value,
             capital_gain,
             outside_option,
             credit.mortgage_rate,
             credit.ltv_limit,
             credit.max_affordable_price(self.cash, self.income),
+            max_price_to_income=cfg.valuation.max_price_to_income,
+            income=self.income,
         )
+        if record_bind:
+            self.model._record_ceiling_bind(bound)
+        return wtp
 
     def step(self):
         """Mesa step hook. Orchestrated by model."""
@@ -622,7 +660,7 @@ class InstitutionalAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def compute_bid(self, prop, avg_rent):
-        return self._wtp_for_property(prop, avg_rent)
+        return self._wtp_for_property(prop, avg_rent, record_bind=True)
 
     # ------------------------------------------------------------------
     # Balance sheet
@@ -715,7 +753,7 @@ class InstitutionalAgent(mesa.Agent):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _wtp_for_property(self, prop, avg_rent):
+    def _wtp_for_property(self, prop, avg_rent, record_bind=False):
         cfg = self.model.config
         # Use market-average price for expected capital gains (see household
         # comment above) to avoid property-specific positive feedback loops.
@@ -724,27 +762,43 @@ class InstitutionalAgent(mesa.Agent):
             if self.model._price_history
             else prop.estimated_value
         )
-        capital_gain = self.expected_price_growth * market_price
-        net_rent = (
-            estimate_market_rent(
-                prop.quality, avg_rent, cfg.valuation.quality_sensitivity
-            )
-            * 12.0
-            * (1.0 - cfg.valuation.operating_cost_fraction)
+        # Same configured capital-gain treatment as households (see helper):
+        # "fixed_level" or rent-sourced "bounded_growth" to break the price loop.
+        capital_gain = expected_capital_gain(
+            cfg.valuation.capital_gain_mode,
+            market_price,
+            fixed_level=cfg.valuation.expected_capital_gain_level,
+            growth_signal=self.expected_rent_growth,
+            growth_min=cfg.valuation.capital_gain_growth_min,
+            growth_max=cfg.valuation.capital_gain_growth_max,
         )
+        gross_annual_rent = (
+            estimate_market_rent(prop.quality, avg_rent, cfg.valuation.quality_sensitivity)
+            * 12.0
+        )
+        net_rent = gross_annual_rent * (1.0 - cfg.valuation.operating_cost_fraction)
         # Discount expected capital gains using funding_rate PLUS an
         # institutional required return (risk premium) so low funding costs do
         # not by themselves generate implausibly large WTPs.
         effective_rate = float(self.funding_rate + cfg.agent.inst_required_return)
-        wtp = investor_wtp(net_rent, capital_gain, effective_rate, cfg.agent.inst_ltv)
+        wtp, bound = investor_wtp(
+            net_rent,
+            capital_gain,
+            effective_rate,
+            cfg.agent.inst_ltv,
+            max_price_to_rent=cfg.valuation.max_price_to_rent,
+            expected_annual_rent=gross_annual_rent,
+        )
         # Prevent unbounded institutional bids by capping at a cash-derived
         # affordability ceiling: assume institutions can leverage up to
         # `inst_ltv` on purchases so max_price = cash / (1 - inst_ltv).
         inst_ltv = cfg.agent.inst_ltv
-        if inst_ltv >= 1.0:
-            return wtp
-        max_price = self.cash / max(1e-9, (1.0 - inst_ltv))
-        return min(wtp, max_price)
+        if inst_ltv < 1.0:
+            max_price = self.cash / max(1e-9, (1.0 - inst_ltv))
+            wtp = min(wtp, max_price)
+        if record_bind:
+            self.model._record_ceiling_bind(bound)
+        return wtp
 
     def step(self):
         pass

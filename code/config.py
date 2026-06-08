@@ -108,6 +108,17 @@ class AgentConfig:
     # valuing expected capital gains. This prevents unrealistically large WTP
     # driven solely by low funding rates.
     inst_required_return: float = 0.03
+    # Activity hurdle: an institution only bids on a
+    # property whose expected GROSS rental yield (annual rent / price) clears this
+    # threshold — so it chases the high-yield corner, not the whole market. Set
+    # at the top of the plan §19 calibration band (4–5% gross yield): institutions
+    # require at least a market yield. This produces the plan §2.3 marginal-pricer
+    # switch — under loose credit households out-bid institutions on most stock
+    # (they win ~80% of auctions); after a credit tightening, household ceilings
+    # collapse and institutions take over the marginal bid (they win ~70%+).
+    # (Empirically a 0.06 hurdle is too high — loose-baseline yields are ~4.5%, so
+    # institutions never activate and no switch occurs.)
+    inst_min_yield: float = 0.05
     # Maximum number of institutional ownership bids allowed per model step.
     # Set to a large value to disable (default = n_properties), or lower to
     # throttle institutional purchase activity and prevent rapid sell-offs.
@@ -131,6 +142,24 @@ class ValuationConfig:
     quality_sensitivity: float = 0.3
     operating_cost_fraction: float = 0.15
     quality_value_scale: float = 1.0
+    # Expected capital gain E[dp] in the WTP numerator (plan §11). Two modes
+    # break the explosive realised-price -> WTP -> realised-price feedback loop:
+    #   "fixed_level"    — constant £ level per period (`expected_capital_gain_level`),
+    #                      independent of price.
+    #   "bounded_growth" — g * market_price, with g clamped to
+    #                      [capital_gain_growth_min, capital_gain_growth_max] and
+    #                      sourced from the rent-growth/macro signal, not the price EMA.
+    capital_gain_mode: str = "fixed_level"
+    expected_capital_gain_level: float = 2000.0
+    capital_gain_growth_min: float = -0.02
+    capital_gain_growth_max: float = 0.02
+    # Fundamentals ceilings: a hard SAFETY NET on the FINAL bid, anchored to the
+    # bidder's real economic capacity, applied as the last step of WTP. They
+    # guarantee no bid detaches from fundamentals regardless of the expectation
+    # term. Households: price <= max_price_to_income * income. Yield investors
+    # (landlords + institutions): price <= max_price_to_rent * gross annual rent.
+    max_price_to_income: float = 4.5
+    max_price_to_rent: float = 25.0
 
 
 @dataclass(frozen=True)
@@ -150,6 +179,26 @@ class MarketConfig:
     min_reservation_rent: float = 200.0
     initial_rent_yield: float = 0.045
     fallback_price: float = 200_000.0
+    # Lease turnover: per-period probability that an active tenancy ends, so
+    # rental supply recirculates and rents are re-discovered every period
+    # (plan §21). Captures both landlord non-renewal and tenant relocation.
+    # Default ~1/12 => mean tenure ~12 quarters (~3 years). Applies only AFTER
+    # the minimum lease term below.
+    lease_expiry_prob: float = 0.0833
+    # Minimum lease term in periods (quarters): a fresh tenant cannot be turned
+    # over by the normal hazard until the tenancy has lasted this long. Default
+    # 4 = 1 year (set 2 for a 6-month minimum).
+    min_lease_quarters: int = 4
+    # Low "early-exit" hazard that applies DURING the minimum term — the genuine
+    # but uncommon real-life cases (break clauses, relocation, distress,
+    # eviction). Set to 0.0 to forbid early exit entirely (hard minimum term).
+    lease_early_exit_prob: float = 0.01
+    # Per-step probability that a HOUSED renter (past its lease term) voluntarily
+    # re-enters the rental search and moves if a strictly better option exists.
+    # Kept low so renters re-evaluate occasionally — not every quarter — which
+    # keeps the rental market competitive (price discovery) without unrealistic
+    # churn. Set 0.0 to disable voluntary moves entirely.
+    renter_research_prob: float = 0.07
     # Loss aversion parameters (owner-occupiers and private landlords).
     loss_aversion_owner: float = 1.30
     loss_aversion_landlord: float = 1.15
@@ -362,6 +411,7 @@ def _validate(cfg: Config) -> None:
         )
 
     _frac("agent.inst_ltv", cfg.agent.inst_ltv)
+    _frac("agent.inst_min_yield", cfg.agent.inst_min_yield)
     _frac("valuation.rent_income_fraction", cfg.valuation.rent_income_fraction)
     _frac("valuation.operating_cost_fraction", cfg.valuation.operating_cost_fraction)
     if cfg.valuation.quality_value_scale < 0:
@@ -369,6 +419,19 @@ def _validate(cfg: Config) -> None:
             f"valuation.quality_value_scale must be >= 0, got "
             f"{cfg.valuation.quality_value_scale}"
         )
+    if cfg.valuation.capital_gain_mode not in ("fixed_level", "bounded_growth"):
+        raise ValueError(
+            f"valuation.capital_gain_mode must be 'fixed_level' or 'bounded_growth', "
+            f"got {cfg.valuation.capital_gain_mode!r}"
+        )
+    if cfg.valuation.capital_gain_growth_min > cfg.valuation.capital_gain_growth_max:
+        raise ValueError(
+            f"valuation.capital_gain_growth_min "
+            f"({cfg.valuation.capital_gain_growth_min}) must be <= "
+            f"capital_gain_growth_max ({cfg.valuation.capital_gain_growth_max})."
+        )
+    _pos("valuation.max_price_to_income", cfg.valuation.max_price_to_income)
+    _pos("valuation.max_price_to_rent", cfg.valuation.max_price_to_rent)
     _frac("expectations.delta", cfg.expectations.delta)
     if cfg.expectations.signal_window < 2:
         raise ValueError(
@@ -380,6 +443,13 @@ def _validate(cfg: Config) -> None:
         m.household_sell_reservation_discount,
     )
     _frac("market.inst_sell_reservation_discount", m.inst_sell_reservation_discount)
+    _frac("market.lease_expiry_prob", m.lease_expiry_prob)
+    _frac("market.lease_early_exit_prob", m.lease_early_exit_prob)
+    _frac("market.renter_research_prob", m.renter_research_prob)
+    if m.min_lease_quarters < 0:
+        raise ValueError(
+            f"market.min_lease_quarters must be >= 0, got {m.min_lease_quarters}"
+        )
 
 
 def load_config(path: str | Path | None = None, *, strict: bool = False) -> Config:

@@ -73,6 +73,24 @@ def household_ownership_share_of_stock(model):
     return hh_owned / total
 
 
+def unhoused_households(model):
+    """
+    Number of households with no home this step (home_property is None).
+
+    A diagnostic for the rehousing loop: every unhoused household must be an
+    active rental searcher (see model._get_rental_candidates), so this count
+    should CHURN around a modest level, not grow unbounded. Unbounded growth
+    means agents are stuck unable to re-house — i.e. the rematch is broken.
+    """
+    from agents import HouseholdAgent
+
+    return sum(
+        1
+        for a in model.agents
+        if isinstance(a, HouseholdAgent) and a.home_property is None
+    )
+
+
 def avg_winning_bid(model):
     """Mean winning (highest) bid submitted this step."""
     txns = model.this_step_transactions
@@ -150,6 +168,19 @@ def debug_avg_ownership_bid(model):
     return float(sum(samples) / len(samples))
 
 
+def ceiling_bind_rate(model):
+    """
+    Cumulative share of ownership bids capped by the fundamentals (price-to-income
+    / price-to-rent) safety net. The ceiling should be a rarely-binding backstop:
+    a value > ~0.5 means the expectation damping is too weak and the ceiling — not
+    economics — is setting prices.
+    """
+    n = getattr(model, "_ceiling_bid_count", 0)
+    if n == 0:
+        return float("nan")
+    return model._ceiling_bind_count / n
+
+
 # Mapping passed to Mesa DataCollector
 MODEL_REPORTERS = {
     "avg_sale_price": avg_sale_price,
@@ -168,4 +199,6 @@ MODEL_REPORTERS = {
     "debug_ownership_bids_filtered": debug_ownership_bids_filtered,
     "debug_avg_ownership_bid": debug_avg_ownership_bid,
     "household_ownership_share_of_stock": household_ownership_share_of_stock,
+    "ceiling_bind_rate": ceiling_bind_rate,
+    "unhoused_households": unhoused_households,
 }

@@ -5,10 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "altair>=6.2.1",
+    "matplotlib>=3.10.9",
     "mesa>=3.5.1",
     "networkx>=3.6.1",  # required: mesa imports it unconditionally but only declares it as an optional extra
     "numpy>=2.4.6",
     "pandas>=3.0.3",
+    "solara>=1.57.4",
 ]
 
 [dependency-groups]

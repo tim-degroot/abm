@@ -120,6 +120,7 @@ sell_score_offset            = 0.02   # household sell vs hold logit offset
 inst_sell_score_offset       = 0.01   # institution sell vs hold logit offset
 inst_ltv                     = 0.60   # institution leverage in WTP
 inst_required_return         = 0.03   # institutional risk premium (annual)
+inst_min_yield               = 0.05   # activity hurdle: institutions only bid where gross yield (annual rent/price) >= this (walkthrough choice G). Set at top of plan §19 4-5% yield band; produces the loose->tight marginal-pricer switch (loose: HH win ~80%; tight: institutions win ~70%+). 0.06 is too high — loose yields ~4.5%, institutions never activate.
 inst_max_bids_per_step       = 9999   # throttle for institutional purchase activity; large value disables the cap
 
 # -----------------------------------------------------------------------------
@@ -144,6 +145,22 @@ rent_income_fraction    = 0.35   # max share of income spent on rent (= credit.r
 quality_sensitivity     = 0.3    # elasticity of achievable rent to property quality
 operating_cost_fraction = 0.15   # operating costs as a fraction of rent (landlords & institutions)
 quality_value_scale     = 1.0    # owner-occupier consumption value of a home as a multiple of its annual market rent (kappa)
+# Expected capital gain E[dp] in the WTP numerator (plan §11). Two modes break the
+# explosive realised-price -> WTP -> realised-price feedback loop (A/B testable):
+#   "fixed_level"    — E[dp] = expected_capital_gain_level (£/period), independent of price.
+#   "bounded_growth" — E[dp] = g * market_price, with g CLAMPED to
+#                      [capital_gain_growth_min, capital_gain_growth_max] and sourced from
+#                      the rent-growth/macro signal (income-driven), NOT the realised-price EMA.
+capital_gain_mode           = "fixed_level"
+expected_capital_gain_level = 2000.0   # £/period; used in "fixed_level" mode (plan §11: modest level)
+capital_gain_growth_min     = -0.02    # per-period growth clamp (lower); used in "bounded_growth" mode
+capital_gain_growth_max     = 0.02     # per-period growth clamp (upper); used in "bounded_growth" mode
+# Fundamentals ceilings — a hard SAFETY NET on the FINAL bid, anchored to the bidder's
+# real economic capacity (applied as the last step of WTP, after all belief terms). They
+# guarantee no bid can detach from fundamentals. Should bind rarely: if the bind-rate
+# metric exceeds ~50%, the expectation damping (capital_gain_mode) is doing too little.
+max_price_to_income = 4.5    # households: price <= this * annual income (realistic UK value)
+max_price_to_rent   = 25.0   # landlords + institutions: price <= this * gross annual rent
 
 # -----------------------------------------------------------------------------
 # [expectations] — adaptive expectation formation (plan.md §7)
@@ -167,6 +184,10 @@ landlord_reservation_yield          = 0.04   # reservation rent = anchor * yield
 min_reservation_rent                = 200.0
 initial_rent_yield                  = 0.045  # initial avg rent = median price * yield / 12
 fallback_price                      = 200000.0  # price-history seed / fallback when no transactions
+lease_expiry_prob                   = 0.0833 # per-period prob an active tenancy ends AFTER the minimum term (landlord non-renewal OR tenant move); ~1/12 => mean tenure ~3yr. Recirculates rental supply so avg_rent is re-discovered every period (plan §21)
+min_lease_quarters                  = 4      # minimum lease term in quarters before normal turnover applies; 4 = 1 year (use 2 for 6 months)
+lease_early_exit_prob               = 0.01   # low hazard DURING the minimum term (real break clauses/relocation/distress); set 0.0 to forbid early exit entirely
+renter_research_prob                = 0.07   # per-step prob a HOUSED renter (past its term) voluntarily re-searches and moves only if strictly better; low => occasional re-evaluation, keeps rental market competitive without every-quarter churn; 0.0 disables
 	# Loss aversion: multiple >1 increases reservation price when seller faces
 	# a nominal loss relative to their purchase anchor `p_0`. Institutions are
 	# exempt (lambda = 0).
