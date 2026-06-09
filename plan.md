@@ -828,6 +828,33 @@ they MUST sell whatever gives them the least expected utility loss to raise mone
 basically slightly better credit to individuals and lower required return to make up for the complexity
 
 
-Things discussed in chat re timescales credit and initalisation
+# 28. Timestep Convention
+
+Every model period represents **one calendar month**. All flows, rates, and durations consistently use monthly units:
+
+| Concept | Period unit | Usage |
+|---------|-------------|-------|
+| Mortgage payment | monthly | Annuity formula uses `r/12` periodic rate and `n×12` periods |
+| Income | monthly | DTI check: `payment ≤ α × monthly_income` |
+| Rent | monthly | Already monthly in implementation (no change needed) |
+| Mortgage rate | per month | 0.05 p.a. → 0.004167 per month |
+| Funding rate | per month | 0.03 p.a. → 0.0025 per month |
+| BTL funding rate | per month | 0.06 p.a. → 0.005 per month |
+| Loan term | months | 25 years → 300 months |
+| `E[dp]` (expected capital gain) | £ per month | fixed_level: 2000 p.a. → ~166.67 per month |
+| Price-to-income ceiling | × monthly income | 4.5 × annual → 54 × monthly (same effective cap) |
+| Price-to-rent ceiling | × monthly rent | 25 × annual → 300 × monthly (same effective cap) |
+| `steps_held` | months | Incremented by 1 each step |
+| `tenancy_months` | months | Incremented by 1 each step (replaces `tenancy_quarters`) |
+
+**Why monthly rather than annual**: monthly calibration aligns with real-world mortgage payment cycles, rent payment cycles, and income receipt cycles. It produces smoother price and rent series, avoids discretisation artefacts from chunky annual payments, and allows realistic lease terms (minimum 12 months, not 4 quarters). The cost is 12× more steps for the same calendar time, and all per-period growth rates and transition probabilities must be rescaled (means ÷12; standard deviations ÷√12; Markov diagonal entries ≈ (11+p)/12).
+
+**What stays the same**: The structural P&L formulas in §6 are invariant — they are expressed as per-period equations. Only the units change. The annuity formulas, WTP denominators, cash-flow deductions, and lease-turnover logic all use the same mathematical forms with the monthly-adjusted parameters.
+
+Config parameters with an implicit "per period" unit are rescaled accordingly (see `config.toml`). All code comments referencing "annual" have been updated to "monthly". Method names like `annual_mortgage_payment` have been renamed to `monthly_mortgage_payment`.
+
+---
+
+# 29. References
 
 https://www.jasss.org/23/2/7.html

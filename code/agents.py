@@ -206,7 +206,7 @@ class HouseholdAgent(mesa.Agent):
             scores.append(("buy", -np.inf))
 
         # RENT — always available; scored by rent burden
-        monthly_burden = avg_market_rent / max(self.income / 12.0, 1.0)
+        monthly_burden = avg_market_rent / max(self.income, 1.0)
         rent_score = acfg.beta_action * (-monthly_burden)
         scores.append(("rent", rent_score))
 
@@ -258,7 +258,7 @@ class HouseholdAgent(mesa.Agent):
             return None
         beta_property = self.model.config.agent.beta_property
         scores = [
-            (p, beta_property * (-p.estimated_value / max(self.income / 12.0, 1.0)))
+            (p, beta_property * (-p.estimated_value / max(self.income, 1.0)))
             for p in rental_candidates
         ]
         probs = _logit_probs(scores)
@@ -393,22 +393,22 @@ class HouseholdAgent(mesa.Agent):
         Called each step by the model.
 
         Increments steps_held on each mortgage record.
-        Payment = annual_mortgage_payment / 1 (we treat each step as one year).
+        Payment = monthly_mortgage_payment (each step is one month).
         """
         credit = self.model.credit
         updated = {}
         for pid, (orig_price, ltv, steps_held) in self._mortgages.items():
-            payment = credit.annual_mortgage_payment(orig_price, ltv)
+            payment = credit.monthly_mortgage_payment(orig_price, ltv)
             self.cash -= payment
             updated[pid] = (orig_price, ltv, steps_held + 1)
         self._mortgages = updated
 
     def mortgage_payment_due(self):
-        """Total mortgage servicing due this period."""
+        """Total mortgage servicing due this period (monthly)."""
         credit = self.model.credit
         return float(
             sum(
-                credit.annual_mortgage_payment(orig_price, ltv)
+                credit.monthly_mortgage_payment(orig_price, ltv)
                 for orig_price, ltv, _ in self._mortgages.values()
             )
         )
@@ -500,22 +500,21 @@ class HouseholdAgent(mesa.Agent):
             growth_min=cfg.valuation.capital_gain_growth_min,
             growth_max=cfg.valuation.capital_gain_growth_max,
         )
-        annual_rent = (
+        monthly_rent = (
             estimate_market_rent(
                 prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
             )
-            * 12.0
         )
         if self.is_owner_occupier:
             # Already housed → an extra purchase is buy-to-let (landlord, plan §11).
-            net_rent = annual_rent * (1.0 - cfg.valuation.operating_cost_fraction)
+            net_rent = monthly_rent * (1.0 - cfg.valuation.operating_cost_fraction)
             wtp, bound = investor_wtp(
                 net_rent,
                 capital_gain,
                 cfg.credit.btl_funding_rate,
                 cfg.credit.btl_ltv,
                 max_price_to_rent=cfg.valuation.max_price_to_rent,
-                expected_annual_rent=annual_rent,
+                expected_monthly_rent=monthly_rent,
             )
             # Private landlords are still credit-constrained (unlike institutions).
             wtp = min(wtp, credit.max_affordable_price(self.cash, self.income))
@@ -524,10 +523,10 @@ class HouseholdAgent(mesa.Agent):
             return wtp
 
         # Owner-occupier purchase: value = quality consumption + capital gain.
-        quality_value = cfg.valuation.quality_value_scale * annual_rent
+        quality_value = cfg.valuation.quality_value_scale * monthly_rent
 
         # Outside option: value of the best available rental alternative in the
-        # agent's searchable zones (annualised). If none available, fall back to
+        # agent's searchable zones (monthly). If none available, fall back to
         # the current average market rent.
         zones = self.model.get_search_zones(self.home_zone)
         rental_props = [
@@ -535,21 +534,20 @@ class HouseholdAgent(mesa.Agent):
             for p in self.model.properties
             if p.zone in zones and p.id != self.home_property
         ]
-        best_rent_ann = 0.0
+        best_monthly_rent = 0.0
         for rp in rental_props:
-            ann = (
+            mr = (
                 estimate_market_rent(
                     rp.quality, avg_market_rent, cfg.valuation.quality_sensitivity
                 )
-                * 12.0
             )
-            if ann > best_rent_ann:
-                best_rent_ann = ann
+            if mr > best_monthly_rent:
+                best_monthly_rent = mr
 
-        if best_rent_ann <= 0.0:
-            best_rent_ann = avg_market_rent * 12.0
+        if best_monthly_rent <= 0.0:
+            best_monthly_rent = avg_market_rent
 
-        outside_option = cfg.valuation.quality_value_scale * best_rent_ann
+        outside_option = cfg.valuation.quality_value_scale * best_monthly_rent
 
         wtp, bound = household_wtp(
             quality_value,
@@ -719,17 +717,17 @@ class InstitutionalAgent(mesa.Agent):
         credit = self.model.credit
         updated = {}
         for pid, (orig_price, ltv, steps_held) in self._mortgages.items():
-            payment = credit.annual_mortgage_payment(orig_price, ltv)
+            payment = credit.monthly_mortgage_payment(orig_price, ltv)
             self.cash -= payment
             updated[pid] = (orig_price, ltv, steps_held + 1)
         self._mortgages = updated
 
     def mortgage_payment_due(self):
-        """Total mortgage servicing due this period."""
+        """Total mortgage servicing due this period (monthly)."""
         credit = self.model.credit
         return float(
             sum(
-                credit.annual_mortgage_payment(orig_price, ltv)
+                credit.monthly_mortgage_payment(orig_price, ltv)
                 for orig_price, ltv, _ in self._mortgages.values()
             )
         )
@@ -785,11 +783,10 @@ class InstitutionalAgent(mesa.Agent):
             growth_min=cfg.valuation.capital_gain_growth_min,
             growth_max=cfg.valuation.capital_gain_growth_max,
         )
-        gross_annual_rent = (
+        gross_monthly_rent = (
             estimate_market_rent(prop.quality, avg_rent, cfg.valuation.quality_sensitivity)
-            * 12.0
         )
-        net_rent = gross_annual_rent * (1.0 - cfg.valuation.operating_cost_fraction)
+        net_rent = gross_monthly_rent * (1.0 - cfg.valuation.operating_cost_fraction)
         # Discount expected capital gains using funding_rate PLUS an
         # institutional required return (risk premium) so low funding costs do
         # not by themselves generate implausibly large WTPs.
@@ -800,7 +797,7 @@ class InstitutionalAgent(mesa.Agent):
             effective_rate,
             cfg.agent.inst_ltv,
             max_price_to_rent=cfg.valuation.max_price_to_rent,
-            expected_annual_rent=gross_annual_rent,
+            expected_monthly_rent=gross_monthly_rent,
         )
         # Prevent unbounded institutional bids by capping at a cash-derived
         # affordability ceiling: assume institutions can leverage up to

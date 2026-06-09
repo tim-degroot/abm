@@ -94,9 +94,9 @@ def run_simulation(config=None, n_steps=None, verbose=True):
     return model
 
 
-def run_credit_shock_experiment(config=None, n_steps=40):
+def run_credit_shock_experiment(config=None, n_steps=480):
     """
-    Demonstrates the marginal-pricer mechanism by tightening credit at step 20.
+    Demonstrates the marginal-pricer mechanism by tightening credit at step 240 (20 years).
 
     Household WTP falls as mortgage_rate rises.
     Institutional WTP is anchored to yields (less affected).
@@ -117,18 +117,18 @@ def run_credit_shock_experiment(config=None, n_steps=40):
     from credit import CreditEnvironment
 
     class CreditShockPolicy(NoPolicy):
-        """Tightens mortgage rate at step 20."""
+        """Tightens mortgage rate at step 240 (20 years into monthly run)."""
 
         def on_step_start(self, model):
-            if model.steps == 20:
+            if model.steps == 240:
                 model.credit = CreditEnvironment(
-                    mortgage_rate=0.08,  # up from baseline 0.05
+                    mortgage_rate=0.006667,  # up from baseline 0.004167 (8% p.a.)
                     ltv_limit=0.80,  # down from baseline 0.85
                     dti_limit=0.30,  # down from baseline 0.35
-                    loan_term_years=cfg.credit.loan_term_years,
+                    loan_term_months=cfg.credit.loan_term_months,
                 )
                 print(
-                    "  [SHOCK] Credit tightened at step 20: rate=8%, LTV=80%, DTI=30%"
+                    "  [SHOCK] Credit tightened at step 240: rate=8% p.a. (0.006667/mo), LTV=80%, DTI=30%"
                 )
 
     model = HousingModel(config=cfg, policy=CreditShockPolicy())
@@ -141,7 +141,7 @@ def run_credit_shock_experiment(config=None, n_steps=40):
         df = model.datacollector.get_model_vars_dataframe()
         mp = df.iloc[-1]["household_marginal_pricer_share"]
         if mp == mp:  # not NaN
-            if step < 20:
+            if step < 240:
                 pre_mp.append(mp)
             else:
                 post_mp.append(mp)

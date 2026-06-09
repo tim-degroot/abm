@@ -113,7 +113,7 @@ class HousingModel(mesa.Model):
             mortgage_rate=cfg.credit.mortgage_rate,
             ltv_limit=cfg.credit.ltv_limit,
             dti_limit=cfg.credit.dti_limit,
-            loan_term_years=cfg.credit.loan_term_years,
+            loan_term_months=cfg.credit.loan_term_months,
         )
 
         # Spatial adjacency — 2D von Neumann torus
@@ -469,7 +469,7 @@ class HousingModel(mesa.Model):
             deposit = price * (1.0 - ltv)
 
         # Income (DTI) feasibility.
-        payment = self.credit.annual_mortgage_payment(price, ltv)
+        payment = self.credit.monthly_mortgage_payment(price, ltv)
         income_ok = payment <= self.credit.dti_limit * hh.income
         if not income_ok and not allow_topup:
             return False
@@ -826,7 +826,7 @@ class HousingModel(mesa.Model):
         relocation (job/family/move) — the same observable outcome: the lease
         ends.
 
-        Minimum lease term (`market.min_lease_quarters`): a fresh tenant cannot
+        Minimum lease term (`market.min_lease_months`): a fresh tenant cannot
         be turned over immediately. While tenancy age < the minimum term, only a
         LOW "early-exit" hazard (`market.lease_early_exit_prob`) applies — this
         models the genuine but uncommon real-life cases (break clauses,
@@ -844,7 +844,7 @@ class HousingModel(mesa.Model):
         mcfg = self.config.market
         base_prob = mcfg.lease_expiry_prob
         early_prob = mcfg.lease_early_exit_prob
-        min_q = mcfg.min_lease_quarters
+        min_m = mcfg.min_lease_months
 
         for prop in self.properties:
             # Active tenancy = someone occupies a property they do not own.
@@ -855,19 +855,19 @@ class HousingModel(mesa.Model):
             ):
                 continue
 
-            # Age the tenancy by one period.
-            prop.tenancy_quarters += 1
+            # Age the tenancy by one period (month).
+            prop.tenancy_months += 1
 
             # Within the minimum term only the low early-exit hazard applies;
             # after it, the normal turnover hazard takes over.
-            prob = base_prob if prop.tenancy_quarters >= min_q else early_prob
+            prob = base_prob if prop.tenancy_months >= min_m else early_prob
             if prob <= 0 or self.rng.random() >= prob:
                 continue
 
             tenant = self._agent_map.get(prop.occupant_id)
             # Free the unit back into the rental pool.
             prop.occupant_id = None
-            prop.tenancy_quarters = 0
+            prop.tenancy_months = 0
             prop.listed_for_rent = True
             # Displace the tenant so it re-enters the rental search this step.
             if isinstance(tenant, HouseholdAgent):
@@ -1349,7 +1349,7 @@ class HousingModel(mesa.Model):
         price = prop.estimated_value
         if price <= 0:
             return 0.0
-        gross_annual_rent = (
+        gross_annual_rent = (  # monthly rent * 12 → annual rent for yield computation
             estimate_market_rent(
                 prop.quality, avg_rent, self.config.valuation.quality_sensitivity
             )
@@ -1398,7 +1398,7 @@ class HousingModel(mesa.Model):
             deposit = prop.estimated_value * (1.0 - ltv)
             if agent.cash < current_due + deposit:
                 return False
-            new_payment = self.credit.annual_mortgage_payment(prop.estimated_value, ltv)
+            new_payment = self.credit.monthly_mortgage_payment(prop.estimated_value, ltv)
             return current_due + new_payment <= self.credit.dti_limit * agent.income
 
         if isinstance(agent, InstitutionalAgent):
@@ -1436,7 +1436,7 @@ class HousingModel(mesa.Model):
         home = self._property_map.get(agent.home_property)
         if home is None:
             return False
-        return home.tenancy_quarters < self.config.market.min_lease_quarters
+        return home.tenancy_months < self.config.market.min_lease_months
 
     def _get_rental_candidates(self, agent):
         """
@@ -1593,7 +1593,7 @@ class HousingModel(mesa.Model):
                     prev.vacate_rental()
 
             prop.occupant_id = txn.tenant_id
-            prop.tenancy_quarters = 0  # fresh tenancy; starts the minimum term
+            prop.tenancy_months = 0  # fresh tenancy; starts the minimum term
             prop.listed_for_rent = False
             prop.current_rent = txn.monthly_rent
 
