@@ -826,3 +826,8 @@ given there are no births/deaths here this absorbing state makes sense broadly b
 they MUST sell whatever gives them the least expected utility loss to raise money and avoid bankruptcy (BEFORE they run out of money) logit
 
 basically slightly better credit to individuals and lower required return to make up for the complexity
+
+
+Things discussed in chat re timescales credit and initalisation
+
+https://www.jasss.org/23/2/7.html
