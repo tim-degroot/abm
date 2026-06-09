@@ -140,6 +140,38 @@ def total_household_net_worth(model):
 
     return sum(a.net_worth for a in model.agents if isinstance(a, HouseholdAgent))
 
+def total_household_cash(model):
+    """Sum of household cash."""
+    from agents import HouseholdAgent
+
+    return sum(a.cash for a in model.agents if isinstance(a, HouseholdAgent))
+
+
+def total_household_gross_housing_assets(model):
+    # Gross housing assets is the market value of the houses the household owns.
+    from agents import HouseholdAgent
+
+    return sum(
+        a.gross_housing_assets
+        for a in model.agents
+        if isinstance(a, HouseholdAgent)
+    )
+
+
+def total_household_mortgage_debt(model):
+    # Mortgage debt is the bank financed part of the housing stock.
+    from agents import HouseholdAgent
+
+    return sum(a.mortgage_debt for a in model.agents if isinstance(a, HouseholdAgent))
+
+
+def total_household_housing_equity(model):
+    # Housing equity is gross housing assets minus mortgage debt. This is the
+    # housing part of household wealth.
+    from agents import HouseholdAgent
+
+    return sum(a.housing_equity for a in model.agents if isinstance(a, HouseholdAgent))
+
 
 def debug_rental_listed(model):
     return getattr(model, "_debug_counts", {}).get("rental_listed", 0)
@@ -197,6 +229,10 @@ MODEL_REPORTERS = {
     "avg_rent": avg_rent,
     "rental_transaction_volume": rental_transaction_volume,
     "total_household_net_worth": total_household_net_worth,
+    "total_household_cash": total_household_cash,
+    "total_household_gross_housing_assets": total_household_gross_housing_assets,
+    "total_household_mortgage_debt": total_household_mortgage_debt,
+    "total_household_housing_equity": total_household_housing_equity,
     "debug_rental_listed": debug_rental_listed,
     "debug_ownership_listed": debug_ownership_listed,
     "debug_rental_bids_submitted": debug_rental_bids_submitted,

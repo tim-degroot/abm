@@ -21,7 +21,7 @@ Everytihng should follow abm/plan.md unless there's a very good reason not to, s
 
 1. ~~Correct income dynamics, there's no need for mean reversion, we can just draw from a growth rate distribution each period depending on the macro state.~~  ✅ Done: Added [macro] and proper handling for Markov Chain macro state.
 2. Are the logit temperatures reasonable?
-3. Adjust net worth for loan balance.
+3. ~~Adjust net worth for loan balance.~~ ✅ Done. Added debt-adjusted housing equity and net-worth accounting.
 4. Review action and property selection logic for consistency with our plan and economic intuition - I think this is completely wrong right now (just some filler) and not actually what we intended, for example I don't see quality anywhere in the decision process - and ensure all actions are available to all agent types (except institutional landlords, who can only buy and sell).
 5. Ensure agents can bid on multiple rental properties only, and move out if they cannot pay rent.
 

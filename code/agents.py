@@ -173,9 +173,28 @@ class HouseholdAgent(mesa.Agent):
         return "+".join(parts)
 
     @property
+    def gross_housing_assets(self):
+        # Market value of the houses the household owns.
+        return self._housing_asset_value
+
+    @property
+    def mortgage_debt(self):
+        # household wealth = cash + house value - remaining loan balance
+        credit = self.model.credit
+        return float(
+            sum(
+                credit.outstanding_principal(orig_price, ltv, steps_held)
+                for orig_price, ltv, steps_held in self._mortgages.values()
+            )
+        )
+
+    @property
+    def housing_equity(self):
+        return self.gross_housing_assets - self.mortgage_debt
+
+    @property
     def net_worth(self):
-        """Cash plus mark-to-market housing asset value."""
-        return self.cash + self._housing_asset_value
+        return self.cash + self.housing_equity
 
     # ------------------------------------------------------------------
     # Stage 1: Action selection
@@ -617,12 +636,26 @@ class InstitutionalAgent(mesa.Agent):
         self._housing_asset_value = 0.0
 
     @property
-    def net_worth(self):
-        debt = 0.0
+    def gross_housing_assets(self):
+        return self._housing_asset_value
+
+    @property
+    def mortgage_debt(self):
         credit = self.model.credit
-        for orig_price, ltv, steps_held in self._mortgages.values():
-            debt += credit.outstanding_principal(orig_price, ltv, steps_held)
-        return self.cash + self._housing_asset_value - debt
+        return float(
+            sum(
+                credit.outstanding_principal(orig_price, ltv, steps_held)
+                for orig_price, ltv, steps_held in self._mortgages.values()
+            )
+        )
+
+    @property
+    def housing_equity(self):
+        return self.gross_housing_assets - self.mortgage_debt
+
+    @property
+    def net_worth(self):
+        return self.cash + self.housing_equity
 
     # ------------------------------------------------------------------
     # Stage 1: Action selection
