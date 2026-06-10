@@ -249,4 +249,15 @@ class RentalMarket:
                 )
             )
 
-        return transactions
+        winners = []
+        winning_tenants = set()
+        for txn in sorted(
+            transactions, key=lambda t: (-t.winning_rent_bid, t.property_id)
+        ):
+            # Future rental valuation can add preference-aware duplicate handling.
+            if txn.tenant_id in winning_tenants:
+                continue
+            winners.append(txn)
+            winning_tenants.add(txn.tenant_id)
+
+        return winners
