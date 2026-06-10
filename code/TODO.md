@@ -15,7 +15,7 @@ Everytihng should follow abm/plan.md unless there's a very good reason not to, s
 5. Consider adding limited vision to the model, where non-institutionals can only see a subset of the market (e.g. properties in their own and adjacent zones) when making decisions.
 6. Check reservation price logic is in there.
 7. Figure out whether just putting in the quality with no weight actually makes sense for renters and owner occupiers, its between 0 and 1 too small to move the needle on the decision process, and for landlords it doesn't make sense at all, they should just be looking at the price and their costs and expected rental income, so maybe we need to add a weight to the quality in the decision process or normalize to percentiles or something.
-8. Figure out whether we actually need Validation at all!
+8. ~~Figure out whether we actually need Validation at all!~~ ✅ Done: confirmed not a requirment
 
 ## Agents
 
@@ -23,7 +23,7 @@ Everytihng should follow abm/plan.md unless there's a very good reason not to, s
 2. Are the logit temperatures reasonable?
 3. ~~Adjust net worth for loan balance.~~ ✅ Done. Added debt-adjusted housing equity and net-worth accounting.
 4. Review action and property selection logic for consistency with our plan and economic intuition - I think this is completely wrong right now (just some filler) and not actually what we intended, for example I don't see quality anywhere in the decision process - and ensure all actions are available to all agent types (except institutional landlords, who can only buy and sell).
-5. Ensure agents can bid on multiple rental properties only, and move out if they cannot pay rent.
+5. Ensure agents can bid on multiple rental properties only, and move out if they cannot pay rent. **George working on**
 
 ## Credit
 
