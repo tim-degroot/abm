@@ -48,7 +48,7 @@ class SimConfig:
     target_ownership_rate: float = 0.65
     inst_ownership_share: float = 0.10
     seed: int = 42
-    n_steps: int = 30
+    n_steps: int = 360
     ownership_mode: str = (
         "emergent"  # "emergent" (default) | "target" (diagnostic only)
     )
@@ -91,8 +91,8 @@ class AgentInitConfig:
     risk_aversion_sigma: float = 0.5
     inst_cash_low: float = 5_000_000.0
     inst_cash_high: float = 20_000_000.0
-    inst_funding_rate_low: float = 0.02
-    inst_funding_rate_high: float = 0.03
+    inst_funding_rate_low: float = 0.001667
+    inst_funding_rate_high: float = 0.0025
 
 
 @dataclass(frozen=True)
@@ -100,13 +100,13 @@ class AgentConfig:
     beta_action: float = 1.0
     beta_property: float = 0.5
     income_reversion: float = 0.05
-    sell_score_offset: float = 0.02
-    inst_sell_score_offset: float = 0.01
+    sell_score_offset: float = 0.001667
+    inst_sell_score_offset: float = 0.000833
     inst_ltv: float = 0.60
     # Institutional required return (risk premium) added to funding_rate when
     # valuing expected capital gains. This prevents unrealistically large WTP
     # driven solely by low funding rates.
-    inst_required_return: float = 0.03
+    inst_required_return: float = 0.0025
     # Activity hurdle: an institution only bids on a
     # property whose expected GROSS rental yield (annual rent / price) clears this
     # threshold — so it chases the high-yield corner, not the whole market. Set
@@ -126,12 +126,12 @@ class AgentConfig:
 
 @dataclass(frozen=True)
 class CreditConfig:
-    mortgage_rate: float = 0.05
+    mortgage_rate: float = 0.004167
     ltv_limit: float = 0.85
     dti_limit: float = 0.35
-    loan_term_years: int = 25
+    loan_term_months: int = 300
     rent_affordability_fraction: float = 0.35
-    btl_funding_rate: float = 0.06
+    btl_funding_rate: float = 0.005
     btl_ltv: float = 0.75
 
 
@@ -149,25 +149,25 @@ class ValuationConfig:
     #                      [capital_gain_growth_min, capital_gain_growth_max] and
     #                      sourced from the rent-growth/macro signal, not the price EMA.
     capital_gain_mode: str = "fixed_level"
-    expected_capital_gain_level: float = 2000.0
-    capital_gain_growth_min: float = -0.02
-    capital_gain_growth_max: float = 0.02
+    expected_capital_gain_level: float = 166.67
+    capital_gain_growth_min: float = -0.001667
+    capital_gain_growth_max: float = 0.001667
     # Fundamentals ceilings: a hard SAFETY NET on the FINAL bid, anchored to the
     # bidder's real economic capacity, applied as the last step of WTP. They
     # guarantee no bid detaches from fundamentals regardless of the expectation
-    # term. Households: price <= max_price_to_income * income. Yield investors
-    # (landlords + institutions): price <= max_price_to_rent * gross annual rent.
-    max_price_to_income: float = 4.5
-    max_price_to_rent: float = 25.0
+    # term. Households: price <= max_price_to_income * income (monthly). Yield
+    # investors (landlords + institutions): price <= max_price_to_rent * gross monthly rent.
+    max_price_to_income: float = 54.0
+    max_price_to_rent: float = 300.0
 
 
 @dataclass(frozen=True)
 class ExpectationsConfig:
     delta: float = 0.7
-    init_price_growth: float = 0.02
-    init_rent_growth: float = 0.02
-    signal_window: int = 5
-    noise_sd: float = 0.005
+    init_price_growth: float = 0.001667
+    init_rent_growth: float = 0.001667
+    signal_window: int = 60
+    noise_sd: float = 0.00144
 
 
 @dataclass(frozen=True)
@@ -181,23 +181,23 @@ class MarketConfig:
     # Lease turnover: per-period probability that an active tenancy ends, so
     # rental supply recirculates and rents are re-discovered every period
     # (plan §21). Captures both landlord non-renewal and tenant relocation.
-    # Default ~1/12 => mean tenure ~12 quarters (~3 years). Applies only AFTER
+    # Default ~0.0278 => mean tenure ~36 months (~3 years). Applies only AFTER
     # the minimum lease term below.
-    lease_expiry_prob: float = 0.0833
-    # Minimum lease term in periods (quarters): a fresh tenant cannot be turned
+    lease_expiry_prob: float = 0.0278
+    # Minimum lease term in periods (months): a fresh tenant cannot be turned
     # over by the normal hazard until the tenancy has lasted this long. Default
-    # 4 = 1 year (set 2 for a 6-month minimum).
-    min_lease_quarters: int = 4
+    # 12 = 1 year (set 6 for a 6-month minimum).
+    min_lease_months: int = 12
     # Low "early-exit" hazard that applies DURING the minimum term — the genuine
     # but uncommon real-life cases (break clauses, relocation, distress,
     # eviction). Set to 0.0 to forbid early exit entirely (hard minimum term).
-    lease_early_exit_prob: float = 0.01
+    lease_early_exit_prob: float = 0.003
     # Per-step probability that a HOUSED renter (past its lease term) voluntarily
     # re-enters the rental search and moves if a strictly better option exists.
-    # Kept low so renters re-evaluate occasionally — not every quarter — which
+    # Kept low so renters re-evaluate occasionally — not every month — which
     # keeps the rental market competitive (price discovery) without unrealistic
     # churn. Set 0.0 to disable voluntary moves entirely.
-    renter_research_prob: float = 0.07
+    renter_research_prob: float = 0.006
     # Loss aversion parameters (owner-occupiers and private landlords).
     loss_aversion_owner: float = 1.30
     loss_aversion_landlord: float = 1.15
@@ -214,14 +214,14 @@ class DebugConfig:
 
 @dataclass(frozen=True)
 class MacroConfig:
-    """Simple macro state growth parameters used for income shocks."""
+    """Simple macro state growth parameters used for income shocks (monthly)."""
     initial_state: str = "Neutral"  # Boom | Neutral | Recession
-    boom_mean: float = 0.03
-    boom_sd: float = 0.02
-    neutral_mean: float = 0.01
-    neutral_sd: float = 0.01
-    recession_mean: float = -0.02
-    recession_sd: float = 0.03
+    boom_mean: float = 0.0025
+    boom_sd: float = 0.00577
+    neutral_mean: float = 0.000833
+    neutral_sd: float = 0.00289
+    recession_mean: float = -0.001667
+    recession_sd: float = 0.00866
     # Markov transition probabilities (row-stochastic: from-state -> to-state)
     boom_to_boom: float = 0.80
     boom_to_neutral: float = 0.15
@@ -419,7 +419,7 @@ def _validate(cfg: Config) -> None:
     _frac("credit.rent_affordability_fraction", c.rent_affordability_fraction)
     if c.mortgage_rate < 0:
         raise ValueError(f"credit.mortgage_rate must be >= 0, got {c.mortgage_rate}")
-    _pos("credit.loan_term_years", c.loan_term_years)
+    _pos("credit.loan_term_months", c.loan_term_months)
     _frac("credit.btl_ltv", c.btl_ltv)
     if c.btl_funding_rate < 0:
         raise ValueError(
@@ -469,9 +469,9 @@ def _validate(cfg: Config) -> None:
     _frac("market.lease_expiry_prob", m.lease_expiry_prob)
     _frac("market.lease_early_exit_prob", m.lease_early_exit_prob)
     _frac("market.renter_research_prob", m.renter_research_prob)
-    if m.min_lease_quarters < 0:
+    if m.min_lease_months < 0:
         raise ValueError(
-            f"market.min_lease_quarters must be >= 0, got {m.min_lease_quarters}"
+            f"market.min_lease_months must be >= 0, got {m.min_lease_months}"
         )
 
 

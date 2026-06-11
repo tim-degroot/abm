@@ -18,7 +18,7 @@ n_properties          = 120     # NOTE: run.py used 120; model.py default was 13
 target_ownership_rate = 0.65    # plan.md §19 calibration target ~65%
 inst_ownership_share  = 0.10    # fraction of stock allocated to institutions at init
 seed                  = 42
-n_steps               = 500      # default number of steps for a baseline run
+n_steps               = 6000     # default number of steps for a baseline run (months)
 # Initial-tenure mode (see config.py / model.py):
 #   "emergent" — ownership is NOT forced; it falls out of who can afford a deposit
 #                given drawn wealth + LTV. This is the scientific/default setting:
@@ -105,8 +105,8 @@ risk_aversion_mu         = 0.0       # plan.md §8: gamma ~ LogNormal(mu_gamma, 
 risk_aversion_sigma      = 0.5
 inst_cash_low            = 5000000.0
 inst_cash_high           = 20000000.0
-inst_funding_rate_low    = 0.02
-inst_funding_rate_high   = 0.03
+inst_funding_rate_low    = 0.001667
+inst_funding_rate_high   = 0.0025
 
 # -----------------------------------------------------------------------------
 # [agent] — decision-rule (behavioural) parameters
@@ -115,10 +115,10 @@ inst_funding_rate_high   = 0.03
 beta_action                  = 1.0    # logit temperature, Stage 1 action choice
 beta_property                = 0.5    # logit temperature, Stage 2 property choice
 income_reversion             = 0.05   # mean-reversion speed of income (TODO: plan wants growth draws, not reversion)
-sell_score_offset            = 0.02   # household sell vs hold logit offset
-inst_sell_score_offset       = 0.01   # institution sell vs hold logit offset
+sell_score_offset            = 0.001667   # household sell vs hold logit offset (per month)
+inst_sell_score_offset       = 0.000833   # institution sell vs hold logit offset (per month)
 inst_ltv                     = 0.60   # institution leverage in WTP
-inst_required_return         = 0.03   # institutional risk premium (annual)
+inst_required_return         = 0.0025   # institutional risk premium (per month)
 inst_min_yield               = 0.05   # activity hurdle: institutions only bid where gross yield (annual rent/price) >= this (walkthrough choice G). Set at top of plan §19 4-5% yield band; produces the loose->tight marginal-pricer switch (loose: HH win ~80%; tight: institutions win ~70%+). 0.06 is too high — loose yields ~4.5%, institutions never activate.
 inst_max_bids_per_step       = 9999   # throttle for institutional purchase activity; large value disables the cap
 
@@ -128,12 +128,12 @@ inst_max_bids_per_step       = 9999   # throttle for institutional purchase acti
 # r_f^BTL (btl_funding_rate) > institutional r_f (agent_init.inst_funding_rate_*).
 # -----------------------------------------------------------------------------
 [credit]
-mortgage_rate              = 0.05
+mortgage_rate              = 0.004167
 ltv_limit                  = 0.85
 dti_limit                  = 0.35
-loan_term_years            = 25
+loan_term_months           = 300
 rent_affordability_fraction = 0.35   # same concept as valuation.rent_income_fraction
-btl_funding_rate           = 0.06    # buy-to-let funding rate for private landlords (r_f^BTL)
+btl_funding_rate           = 0.005    # buy-to-let funding rate for private landlords (r_f^BTL)
 btl_ltv                    = 0.75    # buy-to-let leverage
 
 # -----------------------------------------------------------------------------
@@ -151,15 +151,15 @@ quality_value_scale     = 1.0    # owner-occupier consumption value of a home as
 #                      [capital_gain_growth_min, capital_gain_growth_max] and sourced from
 #                      the rent-growth/macro signal (income-driven), NOT the realised-price EMA.
 capital_gain_mode           = "fixed_level"
-expected_capital_gain_level = 2000.0   # £/period; used in "fixed_level" mode (plan §11: modest level)
-capital_gain_growth_min     = -0.02    # per-period growth clamp (lower); used in "bounded_growth" mode
-capital_gain_growth_max     = 0.02     # per-period growth clamp (upper); used in "bounded_growth" mode
+expected_capital_gain_level = 166.67   # £/period (monthly); used in "fixed_level" mode (plan §11: modest level)
+capital_gain_growth_min     = -0.001667  # per-period growth clamp (lower, monthly); used in "bounded_growth" mode
+capital_gain_growth_max     = 0.001667   # per-period growth clamp (upper, monthly); used in "bounded_growth" mode
 # Fundamentals ceilings — a hard SAFETY NET on the FINAL bid, anchored to the bidder's
 # real economic capacity (applied as the last step of WTP, after all belief terms). They
 # guarantee no bid can detach from fundamentals. Should bind rarely: if the bind-rate
 # metric exceeds ~50%, the expectation damping (capital_gain_mode) is doing too little.
-max_price_to_income = 4.5    # households: price <= this * annual income (realistic UK value)
-max_price_to_rent   = 25.0   # landlords + institutions: price <= this * gross annual rent
+max_price_to_income = 54.0   # households: price <= this * monthly income (was 4.5× annual; 54× monthly = same effective)
+max_price_to_rent   = 300.0  # landlords + institutions: price <= this * gross monthly rent (was 25× annual; 300× monthly = same effective)
 
 # -----------------------------------------------------------------------------
 # [expectations] — adaptive expectation formation (plan.md §7)
@@ -167,31 +167,31 @@ max_price_to_rent   = 25.0   # landlords + institutions: price <= this * gross a
 # -----------------------------------------------------------------------------
 [expectations]
 delta             = 0.7   # smoothing weight on prior expectation
-init_price_growth = 0.02  # initial expected price growth
-init_rent_growth  = 0.02  # initial expected rent growth
-signal_window     = 5     # number of recent periods used to compute growth signals
-noise_sd          = 0.005 # independent expectation noise added per agent each update
+init_price_growth = 0.001667  # initial expected price growth (monthly)
+init_rent_growth  = 0.001667  # initial expected rent growth (monthly)
+signal_window     = 60    # number of recent periods (months) used to compute growth signals
+noise_sd          = 0.00144 # independent expectation noise per agent each update (monthly)
     
 # -----------------------------------------------------------------------------
 # [macro] — simple macro state growth parameters used for income shocks
 # -----------------------------------------------------------------------------
 [macro]
 initial_state = "Neutral"
-boom_mean     = 0.03
-boom_sd       = 0.02
-neutral_mean  = 0.01
-neutral_sd    = 0.01
-recession_mean = -0.02
-recession_sd   = 0.03
-boom_to_boom = 0.80
-boom_to_neutral = 0.15
-boom_to_recession = 0.05
-neutral_to_boom = 0.05
-neutral_to_neutral = 0.90
-neutral_to_recession = 0.05
-recession_to_boom = 0.05
-recession_to_neutral = 0.15
-recession_to_recession = 0.80
+boom_mean     = 0.0025
+boom_sd       = 0.00577
+neutral_mean  = 0.000833
+neutral_sd    = 0.00289
+recession_mean = -0.001667
+recession_sd   = 0.00866
+boom_to_boom = 0.98
+boom_to_neutral = 0.015
+boom_to_recession = 0.005
+neutral_to_boom = 0.005
+neutral_to_neutral = 0.99
+neutral_to_recession = 0.005
+recession_to_boom = 0.005
+recession_to_neutral = 0.015
+recession_to_recession = 0.98
 
 
 # -----------------------------------------------------------------------------
@@ -204,10 +204,10 @@ landlord_reservation_yield          = 0.04   # reservation rent = anchor * yield
 min_reservation_rent                = 200.0
 initial_rent_yield                  = 0.045  # initial avg rent = median price * yield / 12
 fallback_price                      = 200000.0  # price-history seed / fallback when no transactions
-lease_expiry_prob                   = 0.0833 # per-period prob an active tenancy ends AFTER the minimum term (landlord non-renewal OR tenant move); ~1/12 => mean tenure ~3yr. Recirculates rental supply so avg_rent is re-discovered every period (plan §21)
-min_lease_quarters                  = 4      # minimum lease term in quarters before normal turnover applies; 4 = 1 year (use 2 for 6 months)
-lease_early_exit_prob               = 0.01   # low hazard DURING the minimum term (real break clauses/relocation/distress); set 0.0 to forbid early exit entirely
-renter_research_prob                = 0.07   # per-step prob a HOUSED renter (past its term) voluntarily re-searches and moves only if strictly better; low => occasional re-evaluation, keeps rental market competitive without every-quarter churn; 0.0 disables
+lease_expiry_prob                   = 0.0278 # per-period (monthly) prob an active tenancy ends AFTER the minimum term; ~1/36 => mean tenure ~3yr. Recirculates rental supply so avg_rent is re-discovered every period (plan §21)
+min_lease_months                    = 12     # minimum lease term in months before normal turnover applies; 12 = 1 year (use 6 for 6 months)
+lease_early_exit_prob               = 0.003  # low hazard DURING the minimum term (real break clauses/relocation/distress); set 0.0 to forbid early exit entirely
+renter_research_prob                = 0.006  # per-step (monthly) prob a HOUSED renter (past its term) voluntarily re-searches and moves; low => occasional re-evaluation; 0.0 disables
 	# Loss aversion: multiple >1 increases reservation price when seller faces
 	# a nominal loss relative to their purchase anchor `p_0`. Institutions are
 	# exempt (lambda = 0).

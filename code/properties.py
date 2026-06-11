@@ -43,10 +43,10 @@ class Property:
 
     # Occupancy (who lives here, regardless of ownership)
     occupant_id: int | None = None
-    # Length of the CURRENT rental tenancy, in periods (quarters). Aged each
+    # Length of the CURRENT rental tenancy, in periods (months). Aged each
     # step by the model and reset to 0 whenever a new tenant moves in. Used to
     # enforce a minimum lease term before a tenancy can turn over normally.
-    tenancy_quarters: int = 0
+    tenancy_months: int = 0
 
     # Market listing state — only listed_for_sale and listed_for_rent matter;
     # the auction reservation price is passed directly to the market layer.
