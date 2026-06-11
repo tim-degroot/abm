@@ -1,12 +1,11 @@
 import unittest
-from dataclasses import replace
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "code"))
 
 from agents import HouseholdAgent
-from config import Config
+from config import Config, SimConfig, SpatialConfig
 from model import HousingModel
 
 
@@ -14,16 +13,14 @@ class TestHouseholdAccounting(unittest.TestCase):
     def test_net_worth_subtracts_mortgage_debt(self):
         # Testing:
         # loan adjusted wealth = cash + house value - mortgage debt
-        cfg = replace(
-            Config(),
-            sim=replace(
-                Config().sim,
+        cfg = Config(
+            sim=SimConfig(
                 n_households=20,
                 n_institutions=2,
                 n_properties=30,
                 ownership_mode="target",
             ),
-            spatial=replace(Config().spatial, grid_rows=3, grid_cols=3),
+            spatial=SpatialConfig(grid_rows=3, grid_cols=3),
         )
         model = HousingModel(config=cfg)
 

@@ -21,3 +21,7 @@ uv run run.py
 ```bash
 uv run run.py
 ```
+
+```bash
+python -m unittest
+```
