@@ -1,262 +1,203 @@
 """
-Central configuration for the Housing Market ABM.
+Central configuration loader.
 
-Workflow
---------
-1. **Edit** `config.toml` — the single file editable by a human that contains every
-   model parameter.  This is where you change values between experiments.
+Uses Pydantic for type/range validation per field and cross-field checks.
+No manual type-checking or validation functions needed — Field() constraints
+and @model_validator covers everything.
 
-2. **Load** — call `load_config()` at the start of a run.  It reads the TOML,
-   validates all values and returns a fully populated `Config` object.
-
-3. **Lock** — `Config` and all its sub-configs are *frozen* dataclasses.  Once
-   a run begins, no code can accidentally overwrite a parameter during the simulation;
-   any attempted write raises an error immediately.
-
-Parameter access
-----------------
-- **The Model:** Stores the main configuration as `model.config`. This is loaded only once when the model starts, using `load_config()`.
-- **The Agents:** Can read the configuration at any time by calling `self.model.config`.
-- **Helper Functions:** Do not receive the entire configuration object. Instead, you should pass them only the exact variables they need to do their math.
-
-Testing
--------
-For quick testing, you can just call `Config()` in your code. It uses built-in default values that perfectly match `config.toml`, so it works even if the file isn't on your disk.
-However, for real simulations, you must always use `load_config()`. This ensures that the parameters are actually read from the TOML file and validated before the run starts.
-
+load_config() reads config.toml and returns a frozen Config object.
+Partial override files work: any missing key falls back to the Python default.
 """
 
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _DEFAULT_TOML = Path(__file__).parent / "config.toml"
 
 
 # ---------------------------------------------------------------------------
-# Sub-configs (frozen). Defaults mirror config.toml.
+# Sub-configs
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class SimConfig:
-    n_households: int = 100
-    n_institutions: int = 5
-    n_properties: int = 120
-    target_ownership_rate: float = 0.65
-    inst_ownership_share: float = 0.10
+class SimConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    n_households: int = Field(100, gt=0)
+    n_institutions: int = Field(5, gt=0)
+    n_properties: int = Field(120, gt=0)
+    target_ownership_rate: float = Field(0.65, ge=0, le=1)
+    inst_ownership_share: float = Field(0.10, ge=0, le=1)
     seed: int = 42
-    n_steps: int = 360
-    ownership_mode: str = (
-        "emergent"  # "emergent" (default) | "target" (diagnostic only)
-    )
+    n_steps: int = Field(360, gt=0)
+    ownership_mode: str = "emergent"
 
 
-@dataclass(frozen=True)
-class SpatialConfig:
-    """2D toroidal grid. n_zones = grid_rows * grid_cols. Both dims must be >= 3
-    (a dimension of size 2 collapses the two opposite neighbours onto one zone)."""
+class SpatialConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    grid_rows: int = 4
-    grid_cols: int = 4
+    grid_rows: int = Field(4, ge=3)
+    grid_cols: int = Field(4, ge=3)
 
     @property
     def n_zones(self) -> int:
         return self.grid_rows * self.grid_cols
 
 
-@dataclass(frozen=True)
-class PropertyInitConfig:
-    zone_quality_sd: float = 0.5
-    property_residual_sd: float = 0.5
-    base_price: float = 200_000.0
-    price_sensitivity: float = 50_000.0
+class PropertyInitConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    zone_quality_sd: float = Field(0.5, ge=0)
+    property_residual_sd: float = Field(0.5, ge=0)
+    base_price: float = Field(200_000.0, gt=0)
+    price_sensitivity: float = Field(50_000.0, ge=0)
     quality_clustering: bool = False
-    clustering_strength: float = 0.5
+    clustering_strength: float = Field(0.5, ge=0, le=1)
 
 
-@dataclass(frozen=True)
-class AgentInitConfig:
-    income_median: float = 35_000.0
-    income_sigma: float = 0.5
-    wealth_income_mult_low: float = 0.5
-    wealth_income_mult_high: float = 2.0
-    ltv_dist_low: float = 0.70
-    ltv_dist_high: float = 0.85
-    landlord_share: float = 0.10
-    landlord_portfolio_geom_p: float = 0.6
+class AgentInitConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    income_median: float = Field(35_000.0, gt=0)
+    income_sigma: float = Field(0.5, ge=0)
+    wealth_income_mult_low: float = Field(0.5, ge=0)
+    wealth_income_mult_high: float = Field(2.0, ge=0)
+    ltv_dist_low: float = Field(0.70, ge=0, le=1)
+    ltv_dist_high: float = Field(0.85, ge=0, le=1)
+    landlord_share: float = Field(0.10, ge=0, le=1)
+    landlord_portfolio_geom_p: float = Field(0.6, gt=0, le=1)
     risk_aversion_mu: float = 0.0
-    risk_aversion_sigma: float = 0.5
-    inst_cash_low: float = 5_000_000.0
-    inst_cash_high: float = 20_000_000.0
-    inst_funding_rate_low: float = 0.001667
-    inst_funding_rate_high: float = 0.0025
+    risk_aversion_sigma: float = Field(0.5, ge=0)
+    inst_cash_low: float = Field(5_000_000.0, ge=0)
+    inst_cash_high: float = Field(20_000_000.0, ge=0)
+    inst_funding_rate_low: float = Field(0.001667, ge=0)
+    inst_funding_rate_high: float = Field(0.0025, ge=0)
+
+    @model_validator(mode="after")
+    def _check_ordering(self) -> Self:
+        if self.wealth_income_mult_low > self.wealth_income_mult_high:
+            raise ValueError(
+                "agent_init.wealth_income_mult_low must be <= _high"
+            )
+        if self.ltv_dist_low > self.ltv_dist_high:
+            raise ValueError("agent_init.ltv_dist_low must be <= ltv_dist_high")
+        return self
 
 
-@dataclass(frozen=True)
-class AgentConfig:
-    beta_action: float = 1.0
-    beta_property: float = 0.5
-    income_reversion: float = 0.05
+class AgentConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    beta_action: float = Field(1.0, ge=0)
+    beta_property: float = Field(0.5, ge=0)
     sell_score_offset: float = 0.001667
     inst_sell_score_offset: float = 0.000833
-    inst_ltv: float = 0.60
-    # Institutional required return (risk premium) added to funding_rate when
-    # valuing expected capital gains. This prevents unrealistically large WTP
-    # driven solely by low funding rates.
-    inst_required_return: float = 0.0025
-    # Activity hurdle: an institution only bids on a
-    # property whose expected GROSS rental yield (annual rent / price) clears this
-    # threshold — so it chases the high-yield corner, not the whole market. Set
-    # at the top of the plan §19 calibration band (4–5% gross yield): institutions
-    # require at least a market yield. This produces the plan §2.3 marginal-pricer
-    # switch — under loose credit households out-bid institutions on most stock
-    # (they win ~80% of auctions); after a credit tightening, household ceilings
-    # collapse and institutions take over the marginal bid (they win ~70%+).
-    # (Empirically a 0.06 hurdle is too high — loose-baseline yields are ~4.5%, so
-    # institutions never activate and no switch occurs.)
-    inst_min_yield: float = 0.05
-    # Maximum number of institutional ownership bids allowed per model step.
-    # Set to a large value to disable (default = n_properties), or lower to
-    # throttle institutional purchase activity and prevent rapid sell-offs.
-    inst_max_bids_per_step: int = 9999
+    inst_ltv: float = Field(0.60, ge=0, le=1)
+    inst_required_return: float = Field(0.0025, ge=0)
+    inst_min_yield: float = Field(0.05, ge=0, le=1)
 
 
-@dataclass(frozen=True)
-class CreditConfig:
-    mortgage_rate: float = 0.004167
-    ltv_limit: float = 0.85
-    dti_limit: float = 0.35
-    loan_term_months: int = 300
-    rent_affordability_fraction: float = 0.35
-    btl_funding_rate: float = 0.005
-    btl_ltv: float = 0.75
+class CreditConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mortgage_rate: float = Field(0.004167, ge=0)
+    ltv_limit: float = Field(0.85, ge=0, le=1)
+    dti_limit: float = Field(0.35, ge=0, le=1)
+    loan_term_months: int = Field(300, gt=0)
+    btl_funding_rate: float = Field(0.005, ge=0)
+    btl_ltv: float = Field(0.75, ge=0, le=1)
 
 
-@dataclass(frozen=True)
-class ValuationConfig:
-    rent_income_fraction: float = 0.35
-    quality_sensitivity: float = 0.3
-    operating_cost_fraction: float = 0.15
-    quality_value_scale: float = 1.0
-    # Expected capital gain E[dp] in the WTP numerator (plan §11). Two modes
-    # break the explosive realised-price -> WTP -> realised-price feedback loop:
-    #   "fixed_level"    — constant £ level per period (`expected_capital_gain_level`),
-    #                      independent of price.
-    #   "bounded_growth" — g * market_price, with g clamped to
-    #                      [capital_gain_growth_min, capital_gain_growth_max] and
-    #                      sourced from the rent-growth/macro signal, not the price EMA.
-    capital_gain_mode: str = "fixed_level"
+class ValuationConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    rent_income_fraction: float = Field(0.35, ge=0, le=1)
+    quality_sensitivity: float = Field(0.3, ge=0)
+    operating_cost_fraction: float = Field(0.15, ge=0, le=1)
+    quality_value_scale: float = Field(1.0, ge=0)
+    capital_gain_mode: Literal["fixed_level", "bounded_growth"] = "fixed_level"
     expected_capital_gain_level: float = 166.67
     capital_gain_growth_min: float = -0.001667
     capital_gain_growth_max: float = 0.001667
-    # Fundamentals ceilings: a hard SAFETY NET on the FINAL bid, anchored to the
-    # bidder's real economic capacity, applied as the last step of WTP. They
-    # guarantee no bid detaches from fundamentals regardless of the expectation
-    # term. Households: price <= max_price_to_income * income (monthly). Yield
-    # investors (landlords + institutions): price <= max_price_to_rent * gross monthly rent.
-    max_price_to_income: float = 54.0
-    max_price_to_rent: float = 300.0
+    max_price_to_income: float = Field(54.0, gt=0)
+    max_price_to_rent: float = Field(300.0, gt=0)
+
+    @model_validator(mode="after")
+    def _check_growth_bounds(self) -> Self:
+        if self.capital_gain_growth_min > self.capital_gain_growth_max:
+            raise ValueError(
+                "valuation.capital_gain_growth_min must be <= "
+                "capital_gain_growth_max"
+            )
+        return self
 
 
-@dataclass(frozen=True)
-class ExpectationsConfig:
-    delta: float = 0.7
+class ExpectationsConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    delta: float = Field(0.7, ge=0, le=1)
     init_price_growth: float = 0.001667
     init_rent_growth: float = 0.001667
-    signal_window: int = 60
-    noise_sd: float = 0.00144
+    signal_window: int = Field(60, ge=2)
+    noise_sd: float = Field(0.00144, ge=0)
 
 
-@dataclass(frozen=True)
-class MarketConfig:
-    household_sell_reservation_discount: float = 0.95
-    inst_sell_reservation_discount: float = 0.97
-    landlord_reservation_yield: float = 0.04
-    min_reservation_rent: float = 200.0
-    initial_rent_yield: float = 0.045
-    fallback_price: float = 200_000.0
-    # Lease turnover: per-period probability that an active tenancy ends, so
-    # rental supply recirculates and rents are re-discovered every period
-    # (plan §21). Captures both landlord non-renewal and tenant relocation.
-    # Default ~0.0278 => mean tenure ~36 months (~3 years). Applies only AFTER
-    # the minimum lease term below.
-    lease_expiry_prob: float = 0.0278
-    # Minimum lease term in periods (months): a fresh tenant cannot be turned
-    # over by the normal hazard until the tenancy has lasted this long. Default
-    # 12 = 1 year (set 6 for a 6-month minimum).
-    min_lease_months: int = 12
-    # Low "early-exit" hazard that applies DURING the minimum term — the genuine
-    # but uncommon real-life cases (break clauses, relocation, distress,
-    # eviction). Set to 0.0 to forbid early exit entirely (hard minimum term).
-    lease_early_exit_prob: float = 0.003
-    # Per-step probability that a HOUSED renter (past its lease term) voluntarily
-    # re-enters the rental search and moves if a strictly better option exists.
-    # Kept low so renters re-evaluate occasionally — not every month — which
-    # keeps the rental market competitive (price discovery) without unrealistic
-    # churn. Set 0.0 to disable voluntary moves entirely.
-    renter_research_prob: float = 0.006
-    # Loss aversion parameters (owner-occupiers and private landlords).
-    loss_aversion_owner: float = 1.30
-    loss_aversion_landlord: float = 1.15
-    # Estimated value update smoothing: alpha in [0,1].
-    # New estimated_value = alpha * transaction_price + (1-alpha) * old_estimated_value.
-    # Set to 1.0 for legacy behaviour (instant update); use <1.0 to damp single-step outliers.
-    estimated_value_smooth_alpha: float = 1.0
+class MarketConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    household_sell_reservation_discount: float = Field(0.95, ge=0, le=1)
+    inst_sell_reservation_discount: float = Field(0.97, ge=0, le=1)
+    landlord_reservation_yield: float = Field(0.04, ge=0)
+    min_reservation_rent: float = Field(200.0, ge=0)
+    initial_rent_yield: float = Field(0.045, ge=0)
+    fallback_price: float = Field(200_000.0, gt=0)
+    lease_expiry_prob: float = Field(0.0278, ge=0, le=1)
+    min_lease_months: int = Field(12, ge=0)
+    lease_early_exit_prob: float = Field(0.003, ge=0, le=1)
+    renter_research_prob: float = Field(0.006, ge=0, le=1)
+    loss_aversion_owner: float = Field(1.30, ge=0)
+    loss_aversion_landlord: float = Field(1.15, ge=0)
+    estimated_value_smooth_alpha: float = Field(1.0, ge=0, le=1)
 
 
-@dataclass(frozen=True)
-class DebugConfig:
+class DebugConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     enable_bid_logging: bool = False
 
 
-@dataclass(frozen=True)
-class MacroConfig:
-    """Simple macro state growth parameters used for income shocks (monthly)."""
-    initial_state: str = "Neutral"  # Boom | Neutral | Recession
+class MacroConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    initial_state: Literal["Boom", "Neutral", "Recession"] = "Neutral"
     boom_mean: float = 0.0025
-    boom_sd: float = 0.00577
+    boom_sd: float = Field(0.00577, ge=0)
     neutral_mean: float = 0.000833
-    neutral_sd: float = 0.00289
+    neutral_sd: float = Field(0.00289, ge=0)
     recession_mean: float = -0.001667
-    recession_sd: float = 0.00866
-    # Markov transition probabilities (row-stochastic: from-state -> to-state)
-    boom_to_boom: float = 0.80
-    boom_to_neutral: float = 0.15
-    boom_to_recession: float = 0.05
-    neutral_to_boom: float = 0.05
-    neutral_to_neutral: float = 0.90
-    neutral_to_recession: float = 0.05
-    recession_to_boom: float = 0.05
-    recession_to_neutral: float = 0.15
-    recession_to_recession: float = 0.80
+    recession_sd: float = Field(0.00866, ge=0)
+    boom_to_boom: float = Field(0.80, ge=0, le=1)
+    boom_to_neutral: float = Field(0.15, ge=0, le=1)
+    boom_to_recession: float = Field(0.05, ge=0, le=1)
+    neutral_to_boom: float = Field(0.05, ge=0, le=1)
+    neutral_to_neutral: float = Field(0.90, ge=0, le=1)
+    neutral_to_recession: float = Field(0.05, ge=0, le=1)
+    recession_to_boom: float = Field(0.05, ge=0, le=1)
+    recession_to_neutral: float = Field(0.15, ge=0, le=1)
+    recession_to_recession: float = Field(0.80, ge=0, le=1)
 
 
 # ---------------------------------------------------------------------------
 # Top-level config
 # ---------------------------------------------------------------------------
 
-# Maps the TOML section name -> (Config attribute name, dataclass type).
-_SECTIONS = {
-    "sim": ("sim", SimConfig),
-    "spatial": ("spatial", SpatialConfig),
-    "property_init": ("property_init", PropertyInitConfig),
-    "agent_init": ("agent_init", AgentInitConfig),
-    "agent": ("agent", AgentConfig),
-    "credit": ("credit", CreditConfig),
-    "valuation": ("valuation", ValuationConfig),
-    "expectations": ("expectations", ExpectationsConfig),
-    "market": ("market", MarketConfig),
-    "macro": ("macro", MacroConfig),
-    "debug": ("debug", DebugConfig),
-}
 
-
-@dataclass(frozen=True)
-class Config:
-    """Immutable container of all model parameters."""
+class Config(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     sim: SimConfig = SimConfig()
     spatial: SpatialConfig = SpatialConfig()
@@ -270,228 +211,42 @@ class Config:
     macro: MacroConfig = MacroConfig()
     debug: DebugConfig = DebugConfig()
 
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        s, sp, ai, c = self.sim, self.spatial, self.agent_init, self.credit
 
-# ---------------------------------------------------------------------------
-# Loading and validation
-# ---------------------------------------------------------------------------
-
-
-def _type_name(declared) -> str:
-    """Normalise a dataclass field type to its name, robust to whether
-    `from __future__ import annotations` makes it a string or a real type."""
-    if isinstance(declared, str):
-        return declared
-    return getattr(declared, "__name__", str(declared))
-
-
-def _build_section(name: str, cls: type, raw: dict, strict: bool = False) -> object:
-    """
-    Instantiate a sub-config dataclass from a TOML section dict.
-
-    Validation performed here:
-      - Unknown keys raise (typo protection).
-      - Values are TYPE-CHECKED against the field's declared type: a numeric
-        field rejects non-numbers (and booleans, since TOML true/false is not a
-        number); an int field rejects non-integer floats; a str field rejects
-        non-strings. This makes the loader fail fast on a wrong TOML type rather
-        than blowing up later in arithmetic.
-      - Integer-valued floats for int fields (e.g. 25.0) are coerced to int.
-
-    Lenient-by-default behaviour (IMPORTANT):
-      - A MISSING key silently falls back to the dataclass default, which mirrors
-        config.toml. This supports partial override files. Pass strict=True to
-        require every key to be present (errors on any omission).
-    """
-    section = raw.get(name, {})
-    if not isinstance(section, dict):
-        raise ValueError(
-            f"[{name}] section in config must be a table, got {type(section)}"
-        )
-
-    valid = {f.name: f for f in fields(cls)}
-    unknown = set(section) - set(valid)
-    if unknown:
-        raise ValueError(
-            f"Unknown key(s) {sorted(unknown)} in [{name}] section of config."
-        )
-
-    if strict:
-        missing = set(valid) - set(section)
-        if missing:
+        if s.n_properties <= s.n_households:
             raise ValueError(
-                f"strict mode: [{name}] section is missing key(s) "
-                f"{sorted(missing)}."
+                f"n_properties ({s.n_properties}) must exceed n_households "
+                f"({s.n_households}) so renters can find rentals."
             )
-
-    coerced = {}
-    for key, value in section.items():
-        type_name = _type_name(valid[key].type)
-
-        if type_name in ("int", "float"):
-            # bool is a subclass of int in Python; TOML true/false is not numeric.
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(
-                    f"Key '{key}' in [{name}] must be a number, got "
-                    f"{type(value).__name__} ({value!r})."
-                )
-            if type_name == "int" and isinstance(value, float):
-                if not value.is_integer():
-                    raise ValueError(
-                        f"Key '{key}' in [{name}] must be an integer, got {value!r}."
-                    )
-                value = int(value)
-        elif type_name == "str":
-            if not isinstance(value, str):
-                raise ValueError(
-                    f"Key '{key}' in [{name}] must be a string, got "
-                    f"{type(value).__name__} ({value!r})."
-                )
-
-        coerced[key] = value
-    return cls(**coerced)
+        if s.n_properties < sp.n_zones:
+            raise ValueError(
+                f"n_properties ({s.n_properties}) must be >= n_zones "
+                f"({sp.n_zones}) so every zone can hold stock."
+            )
+        if ai.ltv_dist_high > c.ltv_limit:
+            raise ValueError(
+                f"agent_init.ltv_dist_high ({ai.ltv_dist_high}) must be <= "
+                f"credit.ltv_limit ({c.ltv_limit}); origination LTVs would be "
+                "silently clamped, distorting the distribution."
+            )
+        if c.btl_funding_rate < ai.inst_funding_rate_high:
+            raise ValueError(
+                f"credit.btl_funding_rate ({c.btl_funding_rate}) must be >= "
+                f"agent_init.inst_funding_rate_high ({ai.inst_funding_rate_high}); "
+                "plan §6 requires r_f^BTL > r_f."
+            )
+        return self
 
 
-def _validate(cfg: Config) -> None:
-    """Sanity-check parameter ranges; raise ValueError on violation."""
-    s, c, m, sp, ai = cfg.sim, cfg.credit, cfg.market, cfg.spatial, cfg.agent_init
-
-    def _pos(label, v):
-        if v <= 0:
-            raise ValueError(f"{label} must be > 0, got {v}")
-
-    def _frac(label, v):
-        if not (0.0 <= v <= 1.0):
-            raise ValueError(f"{label} must be in [0, 1], got {v}")
-
-    _pos("sim.n_households", s.n_households)
-    _pos("sim.n_institutions", s.n_institutions)
-    _pos("sim.n_properties", s.n_properties)
-    _pos("sim.n_steps", s.n_steps)
-    _frac("sim.target_ownership_rate", s.target_ownership_rate)
-    _frac("sim.inst_ownership_share", s.inst_ownership_share)
-    if s.ownership_mode not in ("emergent", "target"):
-        raise ValueError(
-            f"sim.ownership_mode must be 'emergent' or 'target', got {s.ownership_mode!r}"
-        )
-
-    if s.n_properties <= s.n_households:
-        raise ValueError(
-            f"sim.n_properties ({s.n_properties}) must exceed sim.n_households "
-            f"({s.n_households}) so renters can find rentals."
-        )
-
-    # Spatial grid: both dims >= 3 to avoid degenerate (collapsing) neighbours.
-    if sp.grid_rows < 3 or sp.grid_cols < 3:
-        raise ValueError(
-            f"spatial.grid_rows/grid_cols must each be >= 3 (got "
-            f"{sp.grid_rows}x{sp.grid_cols}); a dimension of size 2 makes opposite "
-            "neighbours collapse onto the same zone."
-        )
-    if s.n_properties < sp.n_zones:
-        raise ValueError(
-            f"sim.n_properties ({s.n_properties}) must be >= n_zones "
-            f"({sp.n_zones}) so every zone can hold stock."
-        )
-
-    # Agent-init distributions.
-    if ai.wealth_income_mult_low > ai.wealth_income_mult_high:
-        raise ValueError("agent_init.wealth_income_mult_low must be <= _high")
-    _pos("agent_init.wealth_income_mult_low", ai.wealth_income_mult_low)
-    _frac("agent_init.ltv_dist_low", ai.ltv_dist_low)
-    _frac("agent_init.ltv_dist_high", ai.ltv_dist_high)
-    if ai.ltv_dist_low > ai.ltv_dist_high:
-        raise ValueError("agent_init.ltv_dist_low must be <= ltv_dist_high")
-    if ai.ltv_dist_high > c.ltv_limit:
-        raise ValueError(
-            f"agent_init.ltv_dist_high ({ai.ltv_dist_high}) must be <= "
-            f"credit.ltv_limit ({c.ltv_limit}); otherwise origination LTVs are "
-            "silently clamped at the cap, distorting the configured distribution."
-        )
-    _frac("agent_init.landlord_share", ai.landlord_share)
-    if not (0.0 < ai.landlord_portfolio_geom_p <= 1.0):
-        raise ValueError(
-            f"agent_init.landlord_portfolio_geom_p must be in (0, 1], got "
-            f"{ai.landlord_portfolio_geom_p}"
-        )
-
-    _frac("credit.ltv_limit", c.ltv_limit)
-    _frac("credit.dti_limit", c.dti_limit)
-    _frac("credit.rent_affordability_fraction", c.rent_affordability_fraction)
-    if c.mortgage_rate < 0:
-        raise ValueError(f"credit.mortgage_rate must be >= 0, got {c.mortgage_rate}")
-    _pos("credit.loan_term_months", c.loan_term_months)
-    _frac("credit.btl_ltv", c.btl_ltv)
-    if c.btl_funding_rate < 0:
-        raise ValueError(
-            f"credit.btl_funding_rate must be >= 0, got {c.btl_funding_rate}"
-        )
-    # plan §6: landlord buy-to-let funding must cost more than institutional funding.
-    if c.btl_funding_rate < ai.inst_funding_rate_high:
-        raise ValueError(
-            f"credit.btl_funding_rate ({c.btl_funding_rate}) must be >= institutional "
-            f"funding (agent_init.inst_funding_rate_high {ai.inst_funding_rate_high}); "
-            "plan §6 requires r_f^BTL > r_f."
-        )
-
-    _frac("agent.inst_ltv", cfg.agent.inst_ltv)
-    _frac("agent.inst_min_yield", cfg.agent.inst_min_yield)
-    _frac("valuation.rent_income_fraction", cfg.valuation.rent_income_fraction)
-    _frac("valuation.operating_cost_fraction", cfg.valuation.operating_cost_fraction)
-    if cfg.valuation.quality_value_scale < 0:
-        raise ValueError(
-            f"valuation.quality_value_scale must be >= 0, got "
-            f"{cfg.valuation.quality_value_scale}"
-        )
-    if cfg.valuation.capital_gain_mode not in ("fixed_level", "bounded_growth"):
-        raise ValueError(
-            f"valuation.capital_gain_mode must be 'fixed_level' or 'bounded_growth', "
-            f"got {cfg.valuation.capital_gain_mode!r}"
-        )
-    if cfg.valuation.capital_gain_growth_min > cfg.valuation.capital_gain_growth_max:
-        raise ValueError(
-            f"valuation.capital_gain_growth_min "
-            f"({cfg.valuation.capital_gain_growth_min}) must be <= "
-            f"capital_gain_growth_max ({cfg.valuation.capital_gain_growth_max})."
-        )
-    _pos("valuation.max_price_to_income", cfg.valuation.max_price_to_income)
-    _pos("valuation.max_price_to_rent", cfg.valuation.max_price_to_rent)
-    _frac("expectations.delta", cfg.expectations.delta)
-    if cfg.expectations.signal_window < 2:
-        raise ValueError(
-            f"expectations.signal_window must be >= 2, got {cfg.expectations.signal_window}"
-        )
-
-    _frac(
-        "market.household_sell_reservation_discount",
-        m.household_sell_reservation_discount,
-    )
-    _frac("market.inst_sell_reservation_discount", m.inst_sell_reservation_discount)
-    _frac("market.lease_expiry_prob", m.lease_expiry_prob)
-    _frac("market.lease_early_exit_prob", m.lease_early_exit_prob)
-    _frac("market.renter_research_prob", m.renter_research_prob)
-    if m.min_lease_months < 0:
-        raise ValueError(
-            f"market.min_lease_months must be >= 0, got {m.min_lease_months}"
-        )
+# ---------------------------------------------------------------------------
+# Loading
+# ---------------------------------------------------------------------------
 
 
-def load_config(path: str | Path | None = None, *, strict: bool = False) -> Config:
-    """
-    Load and validate a Config from a TOML file.
-
-    path   : path to a TOML file, or None to use the bundled config.toml.
-    strict : if False (default), the file may be PARTIAL — any section or key
-             that is absent silently falls back to the dataclass default (which
-             mirrors config.toml). This supports small override files for
-             experiments. If True, the file must be COMPLETE: every section and
-             every key must be present, otherwise a ValueError is raised. Use
-             strict=True when the TOML is meant to be the full canonical source
-             and a silent omission would be a bug.
-
-    Note on what is ALWAYS caught (both modes): unknown section headers, unknown
-    keys, and wrong value types all raise regardless of `strict`. Only *omission*
-    is governed by `strict`.
-    """
+def load_config(path: str | Path | None = None) -> Config:
+    """Read config.toml (or an override file) and return a validated Config."""
     toml_path = Path(path) if path is not None else _DEFAULT_TOML
     if not toml_path.exists():
         raise FileNotFoundError(f"Config file not found: {toml_path}")
@@ -499,32 +254,13 @@ def load_config(path: str | Path | None = None, *, strict: bool = False) -> Conf
     with open(toml_path, "rb") as fh:
         raw = tomllib.load(fh)
 
-    unknown_sections = set(raw) - set(_SECTIONS)
-    if unknown_sections:
-        raise ValueError(
-            f"Unknown section(s) {sorted(unknown_sections)} in {toml_path}."
-        )
-
-    if strict:
-        missing_sections = set(_SECTIONS) - set(raw)
-        if missing_sections:
-            raise ValueError(
-                f"strict mode: {toml_path} is missing section(s) "
-                f"{sorted(missing_sections)}."
-            )
-
-    kwargs = {
-        attr: _build_section(section_name, cls, raw, strict=strict)
-        for section_name, (attr, cls) in _SECTIONS.items()
-    }
-    cfg = Config(**kwargs)
-    _validate(cfg)
-    return cfg
+    return Config(**raw)
 
 
 __all__ = [
     "Config",
     "SimConfig",
+    "SpatialConfig",
     "PropertyInitConfig",
     "AgentInitConfig",
     "AgentConfig",
@@ -532,5 +268,7 @@ __all__ = [
     "ValuationConfig",
     "ExpectationsConfig",
     "MarketConfig",
+    "MacroConfig",
+    "DebugConfig",
     "load_config",
 ]

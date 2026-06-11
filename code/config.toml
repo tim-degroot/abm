@@ -114,13 +114,11 @@ inst_funding_rate_high   = 0.0025
 [agent]
 beta_action                  = 1.0    # logit temperature, Stage 1 action choice
 beta_property                = 0.5    # logit temperature, Stage 2 property choice
-income_reversion             = 0.05   # mean-reversion speed of income (TODO: plan wants growth draws, not reversion)
 sell_score_offset            = 0.001667   # household sell vs hold logit offset (per month)
 inst_sell_score_offset       = 0.000833   # institution sell vs hold logit offset (per month)
 inst_ltv                     = 0.60   # institution leverage in WTP
 inst_required_return         = 0.0025   # institutional risk premium (per month)
 inst_min_yield               = 0.05   # activity hurdle: institutions only bid where gross yield (annual rent/price) >= this (walkthrough choice G). Set at top of plan §19 4-5% yield band; produces the loose->tight marginal-pricer switch (loose: HH win ~80%; tight: institutions win ~70%+). 0.06 is too high — loose yields ~4.5%, institutions never activate.
-inst_max_bids_per_step       = 9999   # throttle for institutional purchase activity; large value disables the cap
 
 # -----------------------------------------------------------------------------
 # [credit] — credit environment / banks (reduced-form, plan.md §9)
@@ -132,7 +130,6 @@ mortgage_rate              = 0.004167
 ltv_limit                  = 0.85
 dti_limit                  = 0.35
 loan_term_months           = 300
-rent_affordability_fraction = 0.35   # same concept as valuation.rent_income_fraction
 btl_funding_rate           = 0.005    # buy-to-let funding rate for private landlords (r_f^BTL)
 btl_ltv                    = 0.75    # buy-to-let leverage
 
