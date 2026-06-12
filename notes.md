@@ -1,5 +1,22 @@
 # Notes
 
+
+## Friday 6th June 2026
+
+- Emergent Phenomena: Report tips. Ignore point three point feedback (tenure composition during displace owner occupiers).
+- Bounded Rationality: Report tips.
+- Game theory: Show Nash Eq of Vickrey auction then should be covered.
+- Risk aversion: More on our own feedback not his. We need to implement based on plan so expectations are correctly computed.
+- Risk aversion: Report tips regarding credit constraints as key driver.
+- Scope: drop full calibration and stylized credit regimes.
+
+Tim literature review. 
+Code review. 
+Merging everything into a current state of affairs. For all, chapters theoritical idea with to-do lists. also cutting down on length. 
+
+Next steps: Code review for everyone before and during Monday meeting. 
+Tuesday meeting at 10am. 
+
 ## Friday 5 June 2026
 
 - Three main global parameters: 1) interest rate, 2) Loan-to-Value (LTV), and 3) deposit requirement
@@ -72,3 +89,4 @@ Keep all current metrics; the following are candidates for removal once they're 
 - `price_to_rent_ratio` (new)
 - `avg_loan_to_value` (new)
 - `vacancy_rate` (new)
+
