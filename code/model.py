@@ -753,6 +753,9 @@ class HousingModel(mesa.Model):
             if isinstance(agent, HouseholdAgent):
                 agent.evolve_income()
 
+        # 1b. Rent servicing before turnover/listing so defaults can search now.
+        self._service_rents()
+
         # 2. Mark-to-market revaluation
         self._mark_to_market()
 
@@ -809,6 +812,50 @@ class HousingModel(mesa.Model):
         # 10. Data
         self.datacollector.collect(self)
         self._sync_visual_grid()
+
+    # ------------------------------------------------------------------
+    # Rent servicing
+    # ------------------------------------------------------------------
+
+    def _tenant_can_pay_rent(self, tenant, monthly_rent) -> bool:
+        if tenant is None or monthly_rent is None or monthly_rent <= 0:
+            return False
+        income = getattr(tenant, "income", None)
+        if income is None or income <= 0:
+            return False
+        return (
+            monthly_rent * 12.0
+            <= self.config.valuation.rent_income_fraction * income
+        )
+
+    def _service_rents(self):
+        """Collect current rents; tenants who cannot pay vacate immediately."""
+        for prop in self.properties:
+            if (
+                prop.occupant_id is None
+                or prop.owner_id is None
+                or prop.occupant_id == prop.owner_id
+                or prop.current_rent is None
+            ):
+                continue
+
+            tenant = self._agent_map.get(prop.occupant_id)
+            if not isinstance(tenant, HouseholdAgent) or tenant.home_property != prop.id:
+                continue
+
+            rent = prop.current_rent
+            if not self._tenant_can_pay_rent(tenant, rent):
+                prop.occupant_id = None
+                prop.tenancy_quarters = 0
+                prop.listed_for_rent = True
+                tenant.vacate_rental()
+                continue
+
+            landlord = self._agent_map.get(prop.owner_id)
+            if not isinstance(landlord, (HouseholdAgent, InstitutionalAgent)):
+                continue
+            tenant.pay_rent(rent)
+            landlord.receive_rent(rent)
 
     # ------------------------------------------------------------------
     # Lease turnover
@@ -1156,15 +1203,19 @@ class HousingModel(mesa.Model):
                                 for p in rental_candidates
                                 if p.quality > current.quality
                             ]
-                    if not rental_candidates:
-                        # nothing to bid on
-                        pass
-                    else:
+                    if rental_candidates:
+                        rent_bid = agent.compute_rent_bid()
                         chosen = agent.choose_rental(rental_candidates)
-                        if chosen is None:
-                            self._debug_counts["rental_bids_filtered"] += 1
-                        else:
-                            rent_bid = agent.compute_rent_bid()
+                        targets = [chosen] if chosen is not None else []
+                        # One logit draw, then deterministic fill; richer utility is later scope.
+                        targets += [
+                            p
+                            for p in sorted(
+                                rental_candidates, key=lambda p: p.quality, reverse=True
+                            )
+                            if p not in targets
+                        ][: 3 - len(targets)]
+                        for chosen in targets:
                             if rent_bid > 0:
                                 # Log rental bid (guarded)
                                 if self._debug_bid_logging:
@@ -1440,7 +1491,7 @@ class HousingModel(mesa.Model):
 
     def _get_rental_candidates(self, agent):
         """
-        Listed, vacant rentals the agent can bid on (never one it owns).
+        Listed, vacant rentals the agent can afford to bid on (never one it owns).
 
         An UNHOUSED household (no owned home AND no active lease, i.e.
         home_property is None) is not tied to any neighbourhood, so it searches
@@ -1451,12 +1502,20 @@ class HousingModel(mesa.Model):
         have no vacancies. A housed renter looking to move stays restricted to
         its local search zones.
         """
+        if not hasattr(agent, "compute_rent_bid"):
+            return []
+
+        max_rent = agent.compute_rent_bid()
+        if max_rent <= 0:
+            return []
+
         listed = [
             p
             for p in self.properties
             if p.listed_for_rent
             and p.occupant_id is None
             and p.owner_id != agent.unique_id
+            and self._reservation_rent(p) <= max_rent
         ]
         if agent.home_property is None:
             return listed  # unhoused: search the whole market
@@ -1558,6 +1617,7 @@ class HousingModel(mesa.Model):
                 alpha * txn.price + (1.0 - alpha) * prop.estimated_value
             )
             prop.listed_for_sale = False
+            prop.listed_for_rent = False
             prop.current_rent = None
 
             buyer.acquire_property(prop, txn.price, origination_ltv=txn.origination_ltv)
@@ -1568,11 +1628,23 @@ class HousingModel(mesa.Model):
         self.all_transactions.extend(transactions)
 
     def _apply_rental_transactions(self, transactions):
+        applied = []
+        self._rental_apply_counts = {
+            "awarded": len(transactions),
+            "applied": 0,
+            "missing_parties": 0,
+            "stale_landlord": 0,
+            "owner_occupied": 0,
+            "non_household_tenant": 0,
+            "rent_unaffordable": 0,
+            "insufficient_cash": 0,
+        }
         for txn in transactions:
             prop = self._property_map[txn.property_id]
             tenant = self._agent_map.get(txn.tenant_id)
             landlord = self._agent_map.get(txn.landlord_id)
             if tenant is None or landlord is None:
+                self._rental_apply_counts["missing_parties"] += 1
                 continue
 
             # Ownership transactions are applied BEFORE rentals, so a property
@@ -1582,8 +1654,16 @@ class HousingModel(mesa.Model):
             # moved in (owner-occupied). Otherwise a tenant would move in on top
             # of the new owner-occupier and both would claim it as home.
             if prop.owner_id != txn.landlord_id:
+                self._rental_apply_counts["stale_landlord"] += 1
                 continue
             if prop.occupant_id is not None and prop.occupant_id == prop.owner_id:
+                self._rental_apply_counts["owner_occupied"] += 1
+                continue
+            if not isinstance(tenant, HouseholdAgent):
+                self._rental_apply_counts["non_household_tenant"] += 1
+                continue
+            if not self._tenant_can_pay_rent(tenant, txn.monthly_rent):
+                self._rental_apply_counts["rent_unaffordable"] += 1
                 continue
 
             # Evict previous occupant if any
@@ -1598,19 +1678,16 @@ class HousingModel(mesa.Model):
             prop.current_rent = txn.monthly_rent
 
             if isinstance(tenant, HouseholdAgent):
-                # Free the tenant's previous rental unit so it does not retain a
-                # stale occupant (which would double-occupy). Only a rental they
-                # actually occupied and do not own; their owned home is untouched.
+                # Free the tenant's previous residence so it cannot retain a stale
+                # occupant pointer after the household moves.
                 old_home = tenant.home_property
-                if (
-                    old_home is not None
-                    and old_home != prop.id
-                    and old_home not in tenant.owned_properties
-                ):
+                if old_home is not None and old_home != prop.id:
                     old_prop = self._property_map.get(old_home)
                     if old_prop is not None and old_prop.occupant_id == tenant.unique_id:
                         old_prop.occupant_id = None
-                        old_prop.listed_for_rent = True
+                        old_prop.tenancy_quarters = 0
+                        if old_home not in tenant.owned_properties:
+                            old_prop.listed_for_rent = True
                 tenant.move_into_rental(prop)
                 tenant.pay_rent(txn.monthly_rent)
 
@@ -1620,9 +1697,11 @@ class HousingModel(mesa.Model):
                 landlord.receive_rent(txn.monthly_rent)
 
             self.policy.on_rental_transaction(txn, self)
+            applied.append(txn)
+            self._rental_apply_counts["applied"] += 1
 
-        self.this_step_rental_transactions = transactions
-        self.all_rental_transactions.extend(transactions)
+        self.this_step_rental_transactions = applied
+        self.all_rental_transactions.extend(applied)
 
     # ------------------------------------------------------------------
     # Expectation updates
