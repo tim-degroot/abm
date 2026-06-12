@@ -3,6 +3,7 @@
 
 ## Friday 6th June 2026
 
+Looking over professor feedback on canvas:
 - Emergent Phenomena: Report tips. Ignore point three point feedback (tenure composition during displace owner occupiers).
 - Bounded Rationality: Report tips.
 - Game theory: Show Nash Eq of Vickrey auction then should be covered.
