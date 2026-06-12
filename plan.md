@@ -739,43 +739,6 @@ Key question:
 
 ---
 
-# 23. Validation (Necessary?)
-
-The validation framework follows Fagiolo et al. (2019), who organise ABM validation along three dimensions: comparison between simulated and real-world data, calibration and estimation of model parameters, and parameter space exploration. The four layers below operationalise this framework for the present model.
-
-## Layer 0: Internal Validity
-
-Sobol analysis ($N = 1024$ Saltelli samples) and Monte Carlo robustness across random seeds establish that results are not artefacts of a particular draw or parameter point. This is the precondition for interpreting all subsequent validity claims.
-
-## Layer 1: Cross-Model Validity
-
-Qualitative replication of Gamal et al.'s stylised facts. This is alignment validation: the model is benchmarked against an existing model rather than data directly.
-
-Expected correspondences:
-
-- interest-rate rise $\to$ price decline, rental price increase,
-- LTV loosening $\to$ price increase, ownership-rate increase,
-- BTL share counter-cyclical with respect to prices.
-
-## Layer 2: Replicative Validity
-
-Quantitative match to UK empirical moments for 2010–2023:
-
-- price-to-rent ratio 20–30$\times$,
-- gross rental yield 4–5%,
-- owner-occupancy rate approximately 65%,
-- nominal price response to the 2022 rate rise approximately 5–10% decline.
-
-The model was calibrated to match these moments, so matching them is necessary but not sufficient.
-
-## Layer 3: Structural Validity
-
-The strongest claim. The simulated marginal-pricer regime switch — from household-dominated to yield-dominated pricing as credit tightens — should correspond in timing and character to the observed transition in UK data: household-dominated pricing in 2010–2021 shifting toward yield-based pricing from 2022 as mortgage affordability collapsed following the Bank of England rate cycle.
-
-This tests not just output patterns but the internal mechanism. A model that matches Layer 2 moments through a different mechanism would fail this test. Correspondence between the simulated regime switch and the observed UK price plateau of 2022–2023 constitutes out-of-sample validation of the marginal-pricer mechanism.
-
----
-
 # 24. Paper Structure
 
 1. Introduction
@@ -785,9 +748,8 @@ This tests not just output patterns but the internal mechanism. A model that mat
 5. Calibration
 6. Experiments
 7. Sensitivity Analysis
-8. Validation
-9. Discussion
-10. Conclusion
+8. Discussion
+9.  Conclusion
 
 ---
 
@@ -832,20 +794,20 @@ basically slightly better credit to individuals and lower required return to mak
 
 Every model period represents **one calendar month**. All flows, rates, and durations consistently use monthly units:
 
-| Concept | Period unit | Usage |
-|---------|-------------|-------|
-| Mortgage payment | monthly | Annuity formula uses `r/12` periodic rate and `n×12` periods |
-| Income | monthly | DTI check: `payment ≤ α × monthly_income` |
-| Rent | monthly | Already monthly in implementation (no change needed) |
-| Mortgage rate | per month | 0.05 p.a. → 0.004167 per month |
-| Funding rate | per month | 0.03 p.a. → 0.0025 per month |
-| BTL funding rate | per month | 0.06 p.a. → 0.005 per month |
-| Loan term | months | 25 years → 300 months |
-| `E[dp]` (expected capital gain) | £ per month | fixed_level: 2000 p.a. → ~166.67 per month |
-| Price-to-income ceiling | × monthly income | 4.5 × annual → 54 × monthly (same effective cap) |
-| Price-to-rent ceiling | × monthly rent | 25 × annual → 300 × monthly (same effective cap) |
-| `steps_held` | months | Incremented by 1 each step |
-| `tenancy_months` | months | Incremented by 1 each step (replaces `tenancy_quarters`) |
+| Concept                         | Period unit      | Usage                                                        |
+| ------------------------------- | ---------------- | ------------------------------------------------------------ |
+| Mortgage payment                | monthly          | Annuity formula uses `r/12` periodic rate and `n×12` periods |
+| Income                          | monthly          | DTI check: `payment ≤ α × monthly_income`                    |
+| Rent                            | monthly          | Already monthly in implementation (no change needed)         |
+| Mortgage rate                   | per month        | 0.05 p.a. → 0.004167 per month                               |
+| Funding rate                    | per month        | 0.03 p.a. → 0.0025 per month                                 |
+| BTL funding rate                | per month        | 0.06 p.a. → 0.005 per month                                  |
+| Loan term                       | months           | 25 years → 300 months                                        |
+| `E[dp]` (expected capital gain) | £ per month      | fixed_level: 2000 p.a. → ~166.67 per month                   |
+| Price-to-income ceiling         | × monthly income | 4.5 × annual → 54 × monthly (same effective cap)             |
+| Price-to-rent ceiling           | × monthly rent   | 25 × annual → 300 × monthly (same effective cap)             |
+| `steps_held`                    | months           | Incremented by 1 each step                                   |
+| `tenancy_months`                | months           | Incremented by 1 each step (replaces `tenancy_quarters`)     |
 
 **Why monthly rather than annual**: monthly calibration aligns with real-world mortgage payment cycles, rent payment cycles, and income receipt cycles. It produces smoother price and rent series, avoids discretisation artefacts from chunky annual payments, and allows realistic lease terms (minimum 12 months, not 4 quarters). The cost is 12× more steps for the same calendar time, and all per-period growth rates and transition probabilities must be rescaled (means ÷12; standard deviations ÷√12; Markov diagonal entries ≈ (11+p)/12).
 
