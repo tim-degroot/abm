@@ -220,3 +220,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .DS_Store
+
+# Personal notes (local only, not for remote)
+come-funziona-il-modello.md
