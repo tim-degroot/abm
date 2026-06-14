@@ -1,62 +1,62 @@
-# TODO
-Everytihng should follow abm/plan.md unless there's a very good reason not to, so review that first if you're not sure about something
+# TODO_new — Gap list to realize NewPlan.md
 
-1. Calibrate `wealth_income_mult_*`, `income_median`, and related init knobs so emergent ownership stays near the 65% target without using `ownership_mode="target"`.
-2. Replace mean-reverting income dynamics with macro growth shocks.
-3. Add spatial quality clustering behind `quality_clustering` and test whether it improves locality realism.
-4. Expand visual diagnostics for prices, rents, tenure, and wealth by agent type.
-5. Review the decision-rule weights, quality handling, and reservation-price logic against `abm/plan.md`.
+What is missing in the code to match NewPlan.md. Grouped by plan section.
+Priority tags: [P0] blocking core claims · [P1] important · [P2] polish.
 
-## General
-1. ~~Create a config file to store all parameters and initialisation settings, and pass this to all functions that need it.~~ ✅ Done: Moved all settings to config.toml . Now config.py loads these into an immutable Config object and passes them safely to the model, agents and run functions. If you can't find a parameter, check config.py to see if its name was changed in the code.
-~~Add a requirements file~~. ✅ Done: generated requirements.txt as a fallback (uv remains the recommended setup).
-3. Build visualisations for all the things we're interested in, including the spatial distribution of properties and agents, the evolution of prices and rents over time, and the distribution of wealth across agent types and income deciles.
-4. Implement risk and loss aversion properly.
-5. Consider adding limited vision to the model, where non-institutionals can only see a subset of the market (e.g. properties in their own and adjacent zones) when making decisions.
-6. Check reservation price logic is in there.
-7. Figure out whether just putting in the quality with no weight actually makes sense for renters and owner occupiers, its between 0 and 1 too small to move the needle on the decision process, and for landlords it doesn't make sense at all, they should just be looking at the price and their costs and expected rental income, so maybe we need to add a weight to the quality in the decision process or normalize to percentiles or something.
-8. ~~Figure out whether we actually need Validation at all!~~ ✅ Done: confirmed not a requirment
+---
 
-## Agents
+## §3 — Spatial structure
+- [P0] Fix grid to plan: 5×5 zones (Z=25), 625 homes/zone, 15,625 properties. Code is 10×10 (Z=100), 120 properties.
+- [P1] Add centre/suburb layout (central zone + surrounding), currently a symmetric torus with no centre.
+- [P1] Implement local vs market-wide PRICE observation: households see only local transaction prices, institutions see market-wide. Now all agents use the same global signal.
+- [P2] Confirm `quality_clustering` flag is exposed in config.toml (currently only read via getattr default).
 
-1. ~~Correct income dynamics, there's no need for mean reversion, we can just draw from a growth rate distribution each period depending on the macro state.~~  ✅ Done: Added [macro] and proper handling for Markov Chain macro state.
-2. Are the logit temperatures reasonable?
-3. ~~Adjust net worth for loan balance.~~ ✅ Done. Added debt-adjusted housing equity and net-worth accounting.
-4. Review action and property selection logic for consistency with our plan and economic intuition - I think this is completely wrong right now (just some filler) and not actually what we intended, for example I don't see quality anywhere in the decision process - and ensure all actions are available to all agent types (except institutional landlords, who can only buy and sell).
-5. ~~Ensure agents can bid on multiple rental properties only, and move out if they cannot pay rent.~~ ✅ Done, in branch Rental-Bidding-Debug
+## §4 / §15 — Banks & macro regime
+- [P0] Make credit parameters regime-dependent: map each macro state to (mortgage_rate, max_LTV, DTI, BTL_rate). Now macro only drives income.
+- [P1] Make rents and expectations respond to macro state (plan §15 lists them; code does not).
 
-## Credit
+## §5 / §8 / §11 — Risk aversion & utility
+- [P0] Implement CRRA utility U(ΔV)=(ΔV)^(1-γ)/(1-γ) on the surplus, with heterogeneous γ. Now `risk_aversion` is stored but never used.
+- [P1] Wire the V → surplus → U → logit flow described in §31.
+- [P2] Keep loss aversion as-is (already implemented) but reconcile formula: code compares anchor vs last market price, plan compares vs bid p.
 
-...
+## §7 — Expectations & information asymmetry
+- [P0] Implement institutional information advantage: institutions condition expectations on macro state + household leverage and forecast future household credit conditions. Now identical to households.
+- [P1] Make E[Δp] heterogeneous across agents (plan §31). In `fixed_level` mode it is a constant for everyone.
 
-## Expectations
+## §10 / §13 — Decision architecture
+- [P1] Replace heuristic Stage-1 action scores with proper V̄^a (expected value at best property) for rent/hold/sell/rent_out. Only `buy` currently uses real WTP.
+- [P1] Align action sets with plan (households {buy,rent,stay}, landlords {buy-to-let,sell,hold,occupy}); code uses one shared enum.
+- [P1] Implement reservation price as the indifference solution V_hold = V_sell(p_res); code uses anchor×discount heuristic.
 
-...
+## §11 — WTP / valuation
+- [P2] Decide quality handling: plan uses q_k directly; code uses quality_value_scale × rent. Normalise/weight per §29.7.
+- [P2] Add institutional required-return reconciliation so r_f < r_f^BTL still guarantees higher institutional ceiling (§11).
 
-## Markets
+## §12 — Rental market
+- [P1] Implement r_max = argmax E[U(V(r))] for rent bids; code uses pure affordability (income × fraction).
+- [P2] Rental property selection by utility/logit; code ranks by -price/income.
 
-...
+## §17 — Initialization
+- [P0] Cap institutional stock at `inst_ownership_share` (0.10); code assigns ALL residual stock to institutions (causes institutional dominance, §29 P0.3).
+- [P1] Make institutional liquid capital effectively unconstrained (plan §17); code caps bids at cash/(1-ltv).
 
-## Metrics
+## §19 — Parameterisation 
+- [P1] Tune init knobs to plausible/stylised values so emergent ownership ≈ 65% without target mode (§29 P1.5). NOT a real-data fit.
+- [P2] Keep yield 4-5% / price-to-rent 20-30× only as order-of-magnitude sanity checks, not fitting targets.
+- [P1] Implement credit as stylised loose/tight regimes (hand-set tuples), per §4/§15.
 
-1. Review whether all the things we're interested in are actually being recorded here.
+## §20 / §22 — Experiments & SA
+- [P1] Make marginal-pricer classification three-way (owner-occupier / landlord / institution); code only splits household vs institution.
+- [P1] Add metrics: share of transaction VALUE and avg valuation premium per group.
+- [P1] Add `inst_min_yield` to the plan (§11/§22) — key regime-switch mechanism currently in code but absent from plan.
+- [P2] Note: SA param risk_aversion_mu is inert until §5/§8 implemented.
 
-## Model
-1. ~~Correct the spatial structure, it should be a 2D grid (toroidal).~~ ✅ Done: replaced the 1-D ring with a 2D von Neumann torus (`grid_rows`×`grid_cols` in config [spatial], default 4×4 = Z=16). Original plan's Z=10 can't form a non-degenerate torus — 2×5 collapses. See config.toml [spatial].)
-2. ~~The initialization rules are ad hoc and need revising following the plan.~~ ✅ Done. Agent initialization now follows plan §17-18: wealth and origination LTV are drawn from configured distributions; deposit, mortgage, and liquid cash are derived from those two numbers so HousingAssets = HousingEquity + MortgageDebt holds by construction (checked via _verify_accounting). Ownership emerges from who can afford a deposit; a fraction of owners are seeded as landlords with right-skewed portfolios. 
+## §28 — Timestep / cleanup
+- [P2] Remove leftover `tenancy_quarters` references (model.py:849, 1688); only `tenancy_months` exists.
 
-## Policies
-
-...
-
-## Properties
-
-...
-
-## Run
-
-1. Right now completely ad hoc and prematurely tries to run experiments, let's rewrite this to just run the model in a useful way for our iteration, and then we can build out the experiments once the model is working properly.
-
-## Valuation
-
-1. Pretty much all of this is ad hoc placeholders and doesn't follow the plan at all, need to review and revise.
+## Baseline pathologies (§29 P0 — blocking experiments)
+- [P0] Explosive price dynamics (E[Δp] feedback).
+- [P0] Rental market collapse after ~2 steps.
+- [P0] Institutional dominance crowding out households.
+- [P0] Initial ownership rate too low vs 65% target.
