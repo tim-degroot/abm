@@ -824,7 +824,7 @@ class HousingModel(mesa.Model):
         if income is None or income <= 0:
             return False
         return (
-            monthly_rent * 12.0
+            monthly_rent
             <= self.config.valuation.rent_income_fraction * income
         )
 
