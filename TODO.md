@@ -1,17 +1,21 @@
-# TODO_new — Gap list to realize NewPlan.md
-
-
+NONE OF THE REPRESENTATIVE UTILITIES FOLLOW THE PLAN
+LISTINGS SHOULD OCCUR BEFORE BUYS
+YOU SHOULD BE ABLE TO SUBMIT BIDS TO MULTIPLE PLACES TO RENT, IN FACT ALL OF THEM SEQUENTIAL CLEARING SO EVERYONE GETS A HOUSE SO YOU DO HIGHEST AT A TIME CLEAR IT IN A RANDOM ORER
+CAN PEOPLE RENT AND BUY AUCTIONS IN THE SAME PERIOD? 
+LISTING FOR SALE, THEN CLEAR PURCHASES, THEN LISTING RENT, THEN CLEAR RENT
+CREATE PARENT AGENT CLASS TO INHERIT COMMONALITIES
 compute bid is ignoring expectations and just using average rent
 quality not coming into the valuations or utility
 candidates should already be only listed houses
 representative utilities are totally wrong
-macro growht shocks
 wtf is record_bind
 check they can buy the property BEFORE and AFTER the bid
 property choice has to happen once everything is listed
 fire sale should stop when enough are siled
 if you sell a property someone lives in you have to kick them out!
 what is prop.estimated value 
+what happens to properties which are not sold in a given period, do they get unliseted the next period?
+
 
 
 What is missing in the code to match NewPlan.md. Grouped by plan section.

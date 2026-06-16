@@ -201,7 +201,9 @@ class HouseholdAgent(mesa.Agent):
     # Stage 1: Action selection
     # ------------------------------------------------------------------
 
-    def choose_action(self, purchase_candidates, avg_market_rent):
+    def choose_action(
+        self, purchase_candidates, avg_market_rent
+    ):  # NONE OF THE REPRESENTATIVE UTILITIES FOLLOW THE PLAN
         """
         Choose action via multinomial logit.
 
@@ -219,14 +221,17 @@ class HouseholdAgent(mesa.Agent):
         ]
         if affordable:
             best_wtp = max(
-                self._wtp_for_property(p, avg_market_rent, credit) for p in affordable
+                self._wtp_for_property(p, avg_market_rent, credit)
+                for p in affordable  # SHOULD BE EXPECTATIONS NOT MKT AVG
             )
             scores.append(("buy", acfg.beta_action * best_wtp))
         else:
             scores.append(("buy", -np.inf))
 
         # RENT — always available; scored by rent burden
-        monthly_burden = avg_market_rent / max(self.income, 1.0)
+        monthly_burden = avg_market_rent / max(
+            self.income, 1.0
+        )  # should be expectations!
         rent_score = acfg.beta_action * (-monthly_burden)
         scores.append(("rent", rent_score))
 
@@ -240,10 +245,10 @@ class HouseholdAgent(mesa.Agent):
             )
             scores.append(("sell", sell_score))
 
-        # RENT_OUT home — only if owner-occupier (move out, become renter+landlord)
+        # RENT_OUT home — only if owner-occupier (move out, become renter+landlord) - THEY ACTUALLY HAVE TO GO TO THE RENTAL MARKET - CHECK THIS
         if self.is_owner_occupier:
             rent_out_score = acfg.beta_action * (
-                avg_market_rent
+                avg_market_rent  # EXPECTATIONS
                 * 12
                 / max(self.model._property_map[self.home_property].estimated_value, 1.0)
                 + self.expected_rent_growth
@@ -258,7 +263,7 @@ class HouseholdAgent(mesa.Agent):
     # Stage 2: Property selection
     # ------------------------------------------------------------------
 
-    def choose_property(self, candidates, avg_market_rent):
+    def choose_property(self, candidates, avg_market_rent):  # EXPECTATIONS
         """Select among feasible candidates via logit on WTP."""
         if not candidates:
             return None
@@ -272,7 +277,9 @@ class HouseholdAgent(mesa.Agent):
         props, weights = zip(*probs)
         return self.model.random.choices(list(props), weights=list(weights), k=1)[0]
 
-    def choose_rental(self, rental_candidates):
+    def choose_rental(
+        self, rental_candidates
+    ):  # seems weird, no need to choose, just bid on all
         """Select among available rentals. Prefers lower rent relative to income."""
         if not rental_candidates:
             return None
@@ -380,7 +387,7 @@ class HouseholdAgent(mesa.Agent):
             0.0, self._housing_asset_value - prop.estimated_value
         )
 
-        # If sold home, become renter (unhoused until rental clears)
+        # If sold home, become renter (unhoused until rental clears) - THIS SHOULD BE ONLY IF YOU'RE LIVING IN THE HOUSE YOURE SELLING
         if self.home_property == prop.id:
             self.home_property = None
 
@@ -448,15 +455,14 @@ class HouseholdAgent(mesa.Agent):
         return sorted(ranked, key=lambda item: item[0])
 
     # ------------------------------------------------------------------
-    # Income dynamics
+    # Income dynamics - SHOULD BE IN ANOTHER MODULE
     # ------------------------------------------------------------------
 
     def evolve_income(self):
         """
         Apply one period of income evolution.
         Apply multiplicative income growth draws each period driven by the
-        current macro state. This replaces any mean-reversion rule and uses
-        state-specific growth mean and volatility from config.macro.
+        current macro state.
         """
         mcfg = getattr(self.model.config, "macro", None)
         state = getattr(self.model, "current_macro_state", "Neutral")
@@ -479,7 +485,9 @@ class HouseholdAgent(mesa.Agent):
     # Expectation update
     # ------------------------------------------------------------------
 
-    def update_expectations(self, price_signal, rent_signal, delta=None):
+    def update_expectations(
+        self, price_signal, rent_signal, delta=None
+    ):  # should just be a call to the expectations
         d = delta if delta is not None else self.model.config.expectations.delta
         noise_sd = self.model.config.expectations.noise_sd
         self.expected_price_growth = adaptive_update(
@@ -498,11 +506,11 @@ class HouseholdAgent(mesa.Agent):
 
     def _wtp_for_property(self, prop, avg_market_rent, credit, record_bind=False):
         cfg = self.model.config
-        # Exogenous expected capital gain (£).
-        # Use the market-level recent average price as the base for expected
+        # Exogenous expected capital gain (£) - EXPECTATIONS
+        # Use the market-level recent average price as the base for expected - EXPECTATIONS
         # capital gains rather than the per-property `estimated_value` to avoid
         # positive feedback where a single high transaction inflates one
-        # property's value and hence everyone's WTP for it.
+        # property's value and hence everyone's WTP for it. - WHAT THE HELL IS THIS
         market_price = (
             self.model._price_history[-1]
             if self.model._price_history
@@ -511,7 +519,7 @@ class HouseholdAgent(mesa.Agent):
         # Expected capital gain via the configured mode, which breaks the
         # realised-price -> WTP -> realised-price feedback loop. In
         # "bounded_growth" mode the growth rate is sourced from the agent's
-        # rent-growth expectation (income-driven), not the price EMA.
+        # rent-growth expectation (income-driven), not the price EMA. - WEIRD hack REMOVE
         capital_gain = expected_capital_gain(
             cfg.valuation.capital_gain_mode,
             market_price,
@@ -534,14 +542,16 @@ class HouseholdAgent(mesa.Agent):
                 max_price_to_rent=cfg.valuation.max_price_to_rent,
                 expected_monthly_rent=monthly_rent,
             )
-            # Private landlords are still credit-constrained (unlike institutions).
+            # Private landlords are still credit-constrained
             wtp = min(wtp, credit.max_affordable_price(self.cash, self.income))
             if record_bind:
                 self.model._record_ceiling_bind(bound)
             return wtp
 
         # Owner-occupier purchase: value = quality consumption + capital gain.
-        quality_value = cfg.valuation.quality_value_scale * monthly_rent
+        quality_value = (
+            cfg.valuation.quality_value_scale * monthly_rent
+        )  # WHY IS THIS RENT SCALING IT SHOULD SCALE QUALITY?
 
         # Outside option: value of the best available rental alternative in the
         # agent's searchable zones (monthly). If none available, fall back to
@@ -555,7 +565,7 @@ class HouseholdAgent(mesa.Agent):
         best_monthly_rent = 0.0
         for rp in rental_props:
             mr = estimate_market_rent(
-                rp.quality, avg_market_rent, cfg.valuation.quality_sensitivity
+                rp.quality, avg_market_rent, cfg.valuation.quality_sensitivity  # WHY?
             )
             if mr > best_monthly_rent:
                 best_monthly_rent = mr
