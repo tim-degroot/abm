@@ -30,7 +30,7 @@ Priority tags: [P0] blocking core claims · [P1] important · [P2] polish.
 - [P0] Fix grid to plan: 5×5 zones (Z=25), 625 homes/zone, 15,625 properties. Code is 10×10 (Z=100), 120 properties.
 - [P1] Add centre/suburb layout (central zone + surrounding), currently a symmetric torus with no centre.
 - [P1] Implement local vs market-wide PRICE observation: households see only local transaction prices, institutions see market-wide. Now all agents use the same global signal.
-- [P2] Confirm `quality_clustering` flag is exposed in config.toml (currently only read via getattr default).
+- [P2] Confirm `quality_clustering` flag is exposed in config (currently only read via getattr default).
 
 ## §4 / §15 — Banks & macro regime
 - [P0] Make credit parameters regime-dependent: map each macro state to (mortgage_rate, max_LTV, DTI, BTL_rate). Now macro only drives income.

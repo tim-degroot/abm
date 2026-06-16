@@ -5,9 +5,9 @@ Expectation formation module.
 import numpy as np
 
 # NOTE: These are standalone fallback defaults only. In a running model the
-# canonical values come from config.toml (expectations.delta, init_price_growth,
+# canonical values come from config (expectations.delta, init_price_growth,
 # init_rent_growth) and are passed in explicitly by the agents. Keep them in
-# sync with config.toml if you change them.
+# sync with config if you change them.
 
 DEFAULT_DELTA = 0.7
 

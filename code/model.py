@@ -20,8 +20,8 @@ Spatial structure:
   Each agent's consideration set = its own zone + the 4 von Neumann neighbours
   (up/down/left/right), wrapping around the torus edges, so every agent faces a
   symmetric 5-zone search space with no edge effects. Properties are distributed
-  as evenly as possible across zones. (See config.toml [spatial] for why the
-  default is a 4x4 torus rather than plan.md's nominal Z=10.)
+   as evenly as possible across zones. (See config [spatial] for why the
+   default is a 4x4 torus rather than plan.md's nominal Z=10.)
 
 Initialisation (plan.md §17-18 — balance sheets DERIVED from allocations so the
 accounting identity HousingAssets = HousingEquity + MortgageDebt holds by
@@ -52,7 +52,7 @@ import mesa
 from mesa.datacollection import DataCollector
 from mesa.discrete_space import OrthogonalVonNeumannGrid
 
-from config import Config, load_config
+from config import Config
 from properties import Property
 from agents import HouseholdAgent, InstitutionalAgent
 from credit import CreditEnvironment
@@ -71,14 +71,14 @@ class HousingModel(mesa.Model):
     ----------
     config : Config, optional
         Immutable parameter container (see config.py). Defaults to the bundled
-        config.toml via load_config(). This is the single source of truth for
+        ``Config()``. This is the single source of truth for
         every parameter and initialisation setting.
     policy : policy object, optional
         Defaults to NoPolicy.
     """
 
     def __init__(self, config=None, policy=None, debug_bid_logging: bool = False):
-        self.config = config if config is not None else load_config()
+        self.config = config if config is not None else Config()
         cfg = self.config
 
         # Use a NumPy Generator for `model.rng` (pass via `rng` to avoid FutureWarning)

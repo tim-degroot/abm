@@ -19,7 +19,7 @@ from mesa.visualization import Slider, SolaraViz, SpaceRenderer, make_plot_compo
 from mesa.visualization.components import AgentPortrayalStyle, PropertyLayerStyle
 
 from agents import HouseholdAgent, InstitutionalAgent
-from config import load_config
+from config import Config
 from model import HousingModel
 
 
@@ -40,7 +40,7 @@ class HousingVizModel(HousingModel):
         initial_rent_yield: float = 0.045,
         debug_bid_logging: bool = False,
     ):
-        cfg = load_config()
+        cfg = Config()
         cfg = replace(
             cfg,
             sim=replace(

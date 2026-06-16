@@ -738,7 +738,7 @@ Research hypothesis: *Credit conditions dominate housing outcomes by shifting wh
 | 9   | Risk aversion μ               | `agent_init.risk_aversion_mu` | Bid shading (§8)                       |
 | 10  | Owner loss aversion λ         | `market.loss_aversion_owner`  | Price stickiness, volume collapse (§5) |
 
-All other `config.toml` parameters (spatial, property init, income/wealth distributions, lease parameters) are held at fixed, plausible (stylised) values and are not SA targets.
+All other config parameters (spatial, property init, income/wealth distributions, lease parameters) are held at fixed, plausible (stylised) values and are not SA targets.
 
 ## Analysis Methods
 
@@ -819,7 +819,7 @@ Every model period represents **one calendar month**. All flows, rates, and dura
 
 **What stays the same**: The structural P&L formulas in §6 are invariant — they are expressed as per-period equations. Only the units change. The annuity formulas, WTP denominators, cash-flow deductions, and lease-turnover logic all use the same mathematical forms with the monthly-adjusted parameters.
 
-Config parameters with an implicit "per period" unit are rescaled accordingly (see `config.toml`). All code comments referencing "annual" have been updated to "monthly". Method names like `annual_mortgage_payment` have been renamed to `monthly_mortgage_payment`.
+Config parameters with an implicit "per period" unit are rescaled accordingly. All code comments referencing "annual" have been updated to "monthly". Method names like `annual_mortgage_payment` have been renamed to `monthly_mortgage_payment`.
 
 ---
 

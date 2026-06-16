@@ -43,10 +43,10 @@ def _resolve_path(name):
 
 
 def run_baseline(args):
-    from config import load_config
+    from config import Config
     from model import HousingModel
 
-    cfg = load_config()
+    cfg = Config()
     if args.seed is not None:
         try:
             cfg.sim.seed = args.seed
@@ -119,12 +119,12 @@ def run_baseline(args):
 
 
 def run_experiment(args):
-    from config import load_config
+    from config import Config
     from model import HousingModel
     from policies import NoPolicy
     from credit import CreditEnvironment
 
-    cfg = load_config()
+    cfg = Config()
     n_steps = args.steps if args.steps is not None else 480
 
     print("\n" + "=" * 60)
@@ -189,9 +189,9 @@ def run_report(args):
     import matplotlib.pyplot as plt
     import pandas as pd
     from model import HousingModel
-    from config import load_config
+    from config import Config
 
-    cfg = load_config()
+    cfg = Config()
     steps = args.steps
     out_png = _resolve_path(args.out)
     out_csv = _resolve_path(args.csv)
@@ -333,10 +333,10 @@ def run_large(args):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import pandas as pd
-    from config import Config, SimConfig, load_config
+    from config import Config, SimConfig
     from model import HousingModel
 
-    base = load_config()
+    base = Config()
     steps = args.steps
     out_csv = _resolve_path(args.csv)
     out_png = _resolve_path(args.out)
@@ -345,25 +345,17 @@ def run_large(args):
         n_households=1000,
         n_institutions=50,
         n_properties=1200,
-        target_ownership_rate=base.sim.target_ownership_rate,  # these should have been removed
-        inst_ownership_share=base.sim.inst_ownership_share,  # these should have been removed
         seed=base.sim.seed,
         n_steps=steps,
-        ownership_mode=base.sim.ownership_mode,
     )
     cfg = Config(
         sim=sim_cfg,
         spatial=base.spatial,
         property_init=base.property_init,
         agent_init=base.agent_init,
-        agent=base.agent,
         credit=base.credit,
         valuation=base.valuation,
         expectations=base.expectations,
-        market=type(base.market)(
-            **{**base.market.__dict__, "estimated_value_smooth_alpha": 0.25}
-        ),
-        debug=base.debug,
     )
 
     _ensure_results_dir()
