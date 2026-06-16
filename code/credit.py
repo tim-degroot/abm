@@ -1,11 +1,3 @@
-"""
-Evaluates borrowing capacity and purchase feasibility.
-Two independent credit constraints are checked:
-  1. Deposit constraint:  (1 - LTV) * price <= cash
-  2. Income constraint:   monthly_mortgage_payment <= DTI * monthly_income
-"""
-
-
 class CreditEnvironment:
     """
     mortgage_rate    : monthly rate, e.g. 0.004167 for 5% p.a.
@@ -66,9 +58,7 @@ class CreditEnvironment:
         """
         Maximum price satisfying both deposit and income constraints.
         """
-        deposit_ceiling = (
-            cash / (1.0 - self.ltv_limit) if self.ltv_limit < 1.0 else float("inf")
-        )
+        deposit_ceiling = cash / (1.0 - self.ltv_limit) if self.ltv_limit < 1.0 else float("inf")
 
         max_payment = self.dti_limit * monthly_income
         r = self.mortgage_rate
@@ -87,8 +77,6 @@ class CreditEnvironment:
         """True if the agent can finance a purchase at this price."""
         return price <= self.max_affordable_price(cash, monthly_income)
 
-    def is_rental_affordable(
-        self, monthly_rent, monthly_income, rent_fraction=0.35
-    ):  # hmm...
+    def is_rental_affordable(self, monthly_rent, monthly_income, rent_fraction=0.35):  # hmm...
         """Rent must not exceed rent_fraction of monthly income."""
         return monthly_rent <= rent_fraction * monthly_income
