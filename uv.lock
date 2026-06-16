@@ -17,6 +17,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "altair" },
     { name = "black" },
+    { name = "git-fame" },
     { name = "matplotlib" },
     { name = "mesa" },
     { name = "networkx" },
@@ -35,6 +36,7 @@ dev = [
 requires-dist = [
     { name = "altair", specifier = ">=6.2.1" },
     { name = "black", specifier = ">=26.5.1" },
+    { name = "git-fame", specifier = ">=3.1.2" },
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "mesa", specifier = ">=3.5.1" },
     { name = "networkx", specifier = ">=3.6.1" },
@@ -91,6 +93,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/35/5d/752690df9ef5b76e169e68d6a129fa6d08a7100ca7f754c89495db3c6019/appnope-0.1.4.tar.gz", hash = "sha256:1de3860566df9caf38f01f86f65e0e13e379af54f9e4bee1e66b48f2efffd1ee", size = 4170, upload-time = "2024-02-06T09:43:11.258Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/29/5ecc3a15d5a33e31b26c11426c45c501e439cb865d0bff96315d86443b78/appnope-0.1.4-py2.py3-none-any.whl", hash = "sha256:502575ee11cd7a28c0205f379b525beefebab9d161b7c964670864014ed7213c", size = 4321, upload-time = "2024-02-06T09:43:09.663Z" },
+]
+
+[[package]]
+name = "argopt"
+version = "0.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/8c/f1dbbb7ca1b6bdfebd8b3ae1d44f099c5678a1592f1562547037e76330d4/argopt-0.9.1.tar.gz", hash = "sha256:29780679f4ff620ffbc897c74415bf99a80fb61c26afdb10fe7aac887efb770e", size = 22534, upload-time = "2025-03-21T11:28:03.976Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/a7/52e83cb21fdbdec2c931285d9e045aa7a07c641d58ea06b24f17944ffef2/argopt-0.9.1-py3-none-any.whl", hash = "sha256:cc78a0e6908c410f2deb927fb073cbfa377cc815d16abc067b72e529619be8a9", size = 13882, upload-time = "2025-03-21T11:28:02.903Z" },
 ]
 
 [[package]]
@@ -457,6 +468,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3c/14/c566f5ca00c115db7725263408ff952b8ae6d6a4e792ef9c84e77d9af7a1/gast-0.6.0.tar.gz", hash = "sha256:88fc5300d32c7ac6ca7b515310862f71e6fdf2c029bbec7c66c0f5dd47b6b1fb", size = 27708, upload-time = "2024-06-27T20:31:49.527Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/61/8001b38461d751cd1a0c3a6ae84346796a5758123f3ed97a1b121dfbf4f3/gast-0.6.0-py3-none-any.whl", hash = "sha256:52b182313f7330389f72b069ba00f174cfe2a06411099547288839c6cbafbd54", size = 21173, upload-time = "2024-07-09T13:15:15.615Z" },
+]
+
+[[package]]
+name = "git-fame"
+version = "3.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "argopt" },
+    { name = "tabulate" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/ba/2cc93777644b8f7baf6bb7fe0ae1a173d982480ca1e8f357e61223317641/git_fame-3.1.2.tar.gz", hash = "sha256:781823b6e709f7f556ce36bc53c8d88017413525c54a024cdccd00bc031fd15b", size = 27336, upload-time = "2026-05-05T01:01:46.134Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/5c/81f1b408d30db0836cc26bb710bd39348e2e94bd42aa9e59f5fdea14655e/git_fame-3.1.2-py3-none-any.whl", hash = "sha256:79d89e217743da9e54abc311543b1b564881714741b2eb28ea6bce068d30f558", size = 19995, upload-time = "2026-05-05T01:01:44.425Z" },
 ]
 
 [[package]]
@@ -1784,6 +1809,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/25/44/ec35f1b6e83094b997da438a02c8c9b0ade2b1e84cfc48bd4656780760a6/starlette-1.2.1.tar.gz", hash = "sha256:9b9b5ebb992e67d6093741e63c2f59e4f6fff986f81163c087867bd7b924b3f6", size = 2701854, upload-time = "2026-05-31T01:07:51.847Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1c/54/196d0c1db10af76baa4f64894448505d60d3cdf70ef92cbb35f46a4e4c71/starlette-1.2.1-py3-none-any.whl", hash = "sha256:4de0082d08c8f6764a85a54cf1120d6939507a19905c7768acad2a9f875d2b89", size = 73350, upload-time = "2026-05-31T01:07:50.09Z" },
+]
+
+[[package]]
+name = "tabulate"
+version = "0.10.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/58/8c37dea7bbf769b20d58e7ace7e5edfe65b849442b00ffcdd56be88697c6/tabulate-0.10.0.tar.gz", hash = "sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d", size = 91754, upload-time = "2026-03-04T18:55:34.402Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", hash = "sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3", size = 39814, upload-time = "2026-03-04T18:55:31.284Z" },
 ]
 
 [[package]]

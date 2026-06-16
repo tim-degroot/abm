@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "altair>=6.2.1",
     "black>=26.5.1",
+    "git-fame>=3.1.2",
     "matplotlib>=3.10.9",
     "mesa>=3.5.1",
     "networkx>=3.6.1", # required: mesa imports it unconditionally but only declares it as an optional extra
