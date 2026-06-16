@@ -54,10 +54,7 @@ class CreditConfig(BaseModel):
     ltv_limit: float = Field(0.85, ge=0, le=1)
     dti_limit: float = Field(0.35, ge=0, le=1)
     loan_term_months: int = Field(360, gt=0)
-    btl_funding_rate: float = Field(0.005, ge=0)
-    btl_ltv: float = Field(0.75, ge=0, le=1)
-    inst_funding_rate_low: float = Field(0.001667, ge=0)
-    inst_funding_rate_high: float = Field(0.0025, ge=0)
+    inst_funding_rate: float = Field(0.0025, ge=0)
     inst_ltv: float = Field(0.60, ge=0, le=1)
 
 
