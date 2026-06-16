@@ -20,7 +20,6 @@ Agent definitions.
     owner-occupier          - lives in owned property, no other holdings
     owner-occupier+landlord - lives in owned home, also owns rentals
     renter+landlord         - rents their own home, owns investment properties
-    unhoused                - between homes (transitional state only)
 
   Mortgage tracking:
     _mortgages : dict { property_id -> (purchase_price, ltv, steps_held) }
@@ -32,6 +31,8 @@ Agent definitions.
     to the agent's baseline_income. This drives affordability changes
     that cause renters to eventually buy and owners to default or sell.
 """
+
+# NO UNHOUSED
 
 import numpy as np
 import mesa
@@ -519,10 +520,8 @@ class HouseholdAgent(mesa.Agent):
             growth_min=cfg.valuation.capital_gain_growth_min,
             growth_max=cfg.valuation.capital_gain_growth_max,
         )
-        monthly_rent = (
-            estimate_market_rent(
-                prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
-            )
+        monthly_rent = estimate_market_rent(
+            prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
         )
         if self.is_owner_occupier:
             # Already housed → an extra purchase is buy-to-let (landlord, plan §11).
@@ -555,10 +554,8 @@ class HouseholdAgent(mesa.Agent):
         ]
         best_monthly_rent = 0.0
         for rp in rental_props:
-            mr = (
-                estimate_market_rent(
-                    rp.quality, avg_market_rent, cfg.valuation.quality_sensitivity
-                )
+            mr = estimate_market_rent(
+                rp.quality, avg_market_rent, cfg.valuation.quality_sensitivity
             )
             if mr > best_monthly_rent:
                 best_monthly_rent = mr
@@ -816,8 +813,8 @@ class InstitutionalAgent(mesa.Agent):
             growth_min=cfg.valuation.capital_gain_growth_min,
             growth_max=cfg.valuation.capital_gain_growth_max,
         )
-        gross_monthly_rent = (
-            estimate_market_rent(prop.quality, avg_rent, cfg.valuation.quality_sensitivity)
+        gross_monthly_rent = estimate_market_rent(
+            prop.quality, avg_rent, cfg.valuation.quality_sensitivity
         )
         net_rent = gross_monthly_rent * (1.0 - cfg.valuation.operating_cost_fraction)
         # Discount expected capital gains using funding_rate PLUS an

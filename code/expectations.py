@@ -1,16 +1,5 @@
 """
 Expectation formation module.
-
-All agents use adaptive expectations:
-
-    E_t = delta * E_{t-1} + (1 - delta) * Signal_t
-
-Signals are computed from recent transaction histories maintained
-by the model. This module contains no agent state — it provides
-pure functions that agents call to update their own expectations.
-
-Separating expectation logic here means future researchers can
-replace the entire expectation system without touching agent code.
 """
 
 import numpy as np
@@ -20,7 +9,6 @@ import numpy as np
 # init_rent_growth) and are passed in explicitly by the agents. Keep them in
 # sync with config.toml if you change them.
 
-# Default smoothing parameter: higher = more inertia
 DEFAULT_DELTA = 0.7
 
 
@@ -37,7 +25,9 @@ def adaptive_update(current_expectation, signal, delta=DEFAULT_DELTA):
     return delta * current_expectation + (1.0 - delta) * signal
 
 
-def price_growth_signal(recent_prices):
+def price_growth_signal(
+    recent_prices,
+):  # extremely coarse, need a decent extrapolation method
     """
     Compute price growth signal from a sequence of recent average prices.
 
@@ -55,7 +45,9 @@ def price_growth_signal(recent_prices):
     return (p_curr - p_prev) / p_prev
 
 
-def rent_growth_signal(recent_rents):
+def rent_growth_signal(
+    recent_rents,
+):  # extremely coarse, need a decent extrapolation method
     """
     Compute rent growth signal from a sequence of recent average rents.
 
@@ -86,3 +78,6 @@ def init_rent_expectation(baseline_growth=0.02):
     Initial expected rent growth.
     """
     return baseline_growth
+
+
+# Missing the bounded vision and difference in signal for institutionals.

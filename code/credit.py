@@ -1,26 +1,13 @@
 """
-Credit environment.
-
 Evaluates borrowing capacity and purchase feasibility.
-Contains no agent behaviour — purely financial constraint logic.
-
 Two independent credit constraints are checked:
   1. Deposit constraint:  (1 - LTV) * price <= cash
   2. Income constraint:   monthly_mortgage_payment <= DTI * monthly_income
-
-Both must be satisfied for a purchase to be feasible.
-
-The loan term (in months) is used throughout: it determines the monthly
-amortising payment which drives the income constraint, and it governs how
-quickly the outstanding mortgage principal amortises — which determines the
-net cash a seller receives when they sell at a gain or loss.
 """
 
 
 class CreditEnvironment:
     """
-    Encapsulates credit conditions for a given period.
-
     mortgage_rate    : monthly rate, e.g. 0.004167 for 5% p.a.
     ltv_limit        : maximum loan-to-value, e.g. 0.85
     dti_limit        : maximum monthly debt-service to income ratio, e.g. 0.35
@@ -28,8 +15,12 @@ class CreditEnvironment:
                        and balance rundown
     """
 
-    def __init__(
-        self, mortgage_rate=0.004167, ltv_limit=0.85, dti_limit=0.35, loan_term_months=300
+    def __init__(  # all hardcoded, these should come from config
+        self,
+        mortgage_rate=0.004167,
+        ltv_limit=0.85,
+        dti_limit=0.35,
+        loan_term_months=300,
     ):
         self.mortgage_rate = mortgage_rate
         self.ltv_limit = ltv_limit
@@ -54,8 +45,7 @@ class CreditEnvironment:
         """
         Remaining mortgage principal after months_elapsed periods of payments.
 
-        Uses the standard amortisation formula. The outstanding balance
-        is used to compute net sale proceeds: seller receives
+        The outstanding balance is used to compute net sale proceeds: seller receives
             sale_price - outstanding_principal
         which may be negative (negative equity) if sale_price < balance.
 
@@ -75,7 +65,6 @@ class CreditEnvironment:
     def max_affordable_price(self, cash, monthly_income):
         """
         Maximum price satisfying both deposit and income constraints.
-        Returns the binding (lower) ceiling.
         """
         deposit_ceiling = (
             cash / (1.0 - self.ltv_limit) if self.ltv_limit < 1.0 else float("inf")
@@ -92,10 +81,14 @@ class CreditEnvironment:
 
         return min(deposit_ceiling, income_ceiling)
 
-    def is_feasible(self, price, cash, monthly_income):
+    def is_feasible(
+        self, price, cash, monthly_income
+    ):  # how does this come into play, technically there are no listings.
         """True if the agent can finance a purchase at this price."""
         return price <= self.max_affordable_price(cash, monthly_income)
 
-    def is_rental_affordable(self, monthly_rent, monthly_income, rent_fraction=0.35):
+    def is_rental_affordable(
+        self, monthly_rent, monthly_income, rent_fraction=0.35
+    ):  # hmm...
         """Rent must not exceed rent_fraction of monthly income."""
         return monthly_rent <= rent_fraction * monthly_income

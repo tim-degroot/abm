@@ -1,38 +1,8 @@
 """
 Valuation: willingness-to-pay (WTP) formulas.
 
-Agents hold no valuation logic; they call these functions. Maximum WTP is the
-price at which an agent's surplus over its outside option is exactly zero
-(plan §11). Every agent shares the same P&L object (plan §2.1):
-
-    Pi = CF + E[dp] - FC          (cash flow + expected capital gain - financing)
-
-What differs is the source of cash flow and the financing cost, giving two
-break-even forms. All money terms are monthly £.
-
-Owner-occupier — household_wtp (plan §6, §11):
-    p_max = ( q_k + E[dp] - V_outside ) / ( r_m * L )
-  The cash flow is the consumption value of the home's quality (imputed rent
-  cancels between owning and renting, so it does not appear). Credit-capped.
-
-Yield investor — investor_wtp (plan §11), used by BOTH private landlords and
-institutions (same formula, only the funding rate differs):
-    p_max = ( R - phi + E[dp] ) / ( r_f * L )
-  The cash flow is net rental income. Institutions fund at r_f; private
-  landlords at r_f^BTL, with r_f < r_f^BTL (plan §6), so for the same property
-  institutions always have the higher ceiling.
-
-Symbols (plan §6, §11):
-    q_k       quality consumption value of the home (owner-occupiers only)
-    E[dp]     expected capital gain, in £ (here exogenous: growth * current value)
-    V_outside value of the best rental alternative (set to 0 for now)
-    r_m       mortgage rate           L   loan-to-value (leverage)
-    R         monthly rental income   phi operating costs
-    r_f       investor funding rate (r_f for institutions, r_f^BTL for landlords)
-
-Because r_m, r_f and r_f^BTL move differently with credit conditions, the two
-ceilings rise and fall at different rates — this is what drives the
-marginal-pricer regime switches (plan §2).
+Maximum WTP is the price at which an agent's surplus over its outside
+option is exactly zero.
 """
 
 
@@ -44,32 +14,17 @@ def household_wtp(
     ltv,
     credit_ceiling,
     *,
-    max_price_to_income,
+    max_price_to_income,  # remove
     income,
 ):
     """
-    Owner-occupier break-even price (plan §6, §11):
-
-        p_max = ( q_k + E[dp] - V_outside ) / ( r_m * L )
-
-    then capped at the household's credit ceiling (plan §9: whichever of the
-    deposit or income constraints binds first), and finally at a fundamentals
-    ceiling — a price-to-income multiple of the bidder's income. The
-    fundamentals ceiling is a hard SAFETY NET on the final bid: it guarantees no
-    bid can detach from the bidder's real economic capacity regardless of what
-    the expectation/belief terms produce. It is not a constraint on beliefs.
-
     quality_value        : q_k, monthly £ value of the home's quality consumption
     capital_gain         : E[dp], expected monthly £ price appreciation
     outside_option_value : V_outside, monthly £ value of the renter alternative
     mortgage_rate        : r_m (monthly)      ltv : L, loan-to-value
     credit_ceiling       : max affordable price from the credit constraints
     max_price_to_income  : fundamentals ceiling = this * income
-    income               : bidder's monthly income (£)
-
-    Returns (wtp, ceiling_bound) where ceiling_bound is True iff the
-    fundamentals (price-to-income) ceiling sits below the formula-computed price
-    — i.e. the safety net, not economics, is capping the raw computed WTP.
+    income               : bidder's monthly income
     """
     denom = mortgage_rate * ltv
     if denom <= 0:
@@ -77,7 +32,6 @@ def household_wtp(
     else:
         raw = (quality_value + capital_gain - outside_option_value) / denom
 
-    income_ceiling = max_price_to_income * income
     ceiling_bound = income_ceiling < raw
 
     price = min(raw, credit_ceiling, income_ceiling)
