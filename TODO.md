@@ -15,14 +15,12 @@ fire sale should stop when enough are siled
 if you sell a property someone lives in you have to kick them out!
 what is prop.estimated value 
 what happens to properties which are not sold in a given period, do they get unliseted the next period?
-use shares not rates
 is inst_ltv and required return varying with macro enviornment?
  household should have cheaper funding than institutional
  smoothing valuations   
  ewma
 
-What is missing in the code to match NewPlan.md. Grouped by plan section.
-Priority tags: [P0] blocking core claims · [P1] important · [P2] polish.
+Addressed feedback? Papers we were supposed to read?
 
 ---
 

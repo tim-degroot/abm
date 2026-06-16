@@ -9,8 +9,8 @@ class SimConfig(BaseModel):
     n_households: int = Field(100, gt=0)
     n_institutions: int = Field(5, gt=0)
     n_properties: int = Field(120, gt=0)
-    seed: int = 42
     n_steps: int = Field(720, gt=0)
+    seed: int = 42
 
 
 class SpatialConfig(BaseModel):
@@ -19,7 +19,7 @@ class SpatialConfig(BaseModel):
     grid_cols: int = Field(5, ge=3)
 
     @property
-    def n_zones(self) -> int:  #
+    def n_zones(self) -> int:  ###
         return self.grid_rows * self.grid_cols
 
 
@@ -43,34 +43,32 @@ class AgentInitConfig(BaseModel):
     risk_aversion_mu: float = 1.0
     risk_aversion_sigma: float = Field(0.5, ge=0)
     inst_cash_low: float = Field(5_000_000.0, ge=0)
-    inst_cash_high: float = Field(20_000_000.0, ge=0)  # appropriate?
+    inst_cash_high: float = Field(20_000_000.0, ge=0)
     inst_required_return: float = Field(0.0025, ge=0)
-    loss_aversion: float = Field(1.30, ge=0)  # is this appropriately scaled?
+    loss_aversion: float = Field(1.30, ge=0)  ###
 
 
 class CreditConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    mortgage_rate: float = Field(0.004167, ge=0)
+    mortgage_rate: float = Field(0.0025, ge=0)
     ltv_limit: float = Field(0.85, ge=0, le=1)
     dti_limit: float = Field(0.35, ge=0, le=1)
     loan_term_months: int = Field(360, gt=0)
-    inst_funding_rate: float = Field(0.0025, ge=0)
+    inst_funding_rate: float = Field(0.0045, ge=0)
     inst_ltv: float = Field(0.60, ge=0, le=1)
 
 
 class ValuationConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    quality_sensitivity: float = Field(0.3, ge=0)  # arbitrary
+    quality_sensitivity: float = Field(0.3, ge=0)  ###
 
 
 class ExpectationsConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    delta: float = Field(0.7, ge=0, le=1)  # arbitary
     init_price_growth: float = 0.001667
     init_rent_growth: float = 0.001667
-    household_signal_window: int = Field(60, ge=2)
-    institutional_signal_window: int = Field(120, ge=2)
-    noise_sd: float = Field(0.00144, ge=0)
+    inst_noise_sd: float = Field(0.00072, ge=0)
+    household_noise_sd: float = Field(0.00144, ge=0)
 
 
 class MacroConfig(BaseModel):  # Need to add credit conditions

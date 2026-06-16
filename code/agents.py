@@ -129,10 +129,7 @@ class HouseholdAgent(mesa.Agent):
     @property
     def is_owner_occupier(self):
         """Lives in a property they own."""
-        return (
-            self.home_property is not None
-            and self.home_property in self.owned_properties
-        )
+        return self.home_property is not None and self.home_property in self.owned_properties
 
     @property
     def is_renter(self):
@@ -140,18 +137,13 @@ class HouseholdAgent(mesa.Agent):
         Lives in a rented property (home_property set but not owned),
         or is unhoused and seeking rental.
         """
-        return (
-            self.home_property is None
-            or self.home_property not in self.owned_properties
-        )
+        return self.home_property is None or self.home_property not in self.owned_properties
 
     @property
     def is_landlord(self):
         """Owns at least one property they do not live in."""
         rented_out = self.owned_properties - (
-            {self.home_property}
-            if self.home_property in self.owned_properties
-            else set()
+            {self.home_property} if self.home_property in self.owned_properties else set()
         )
         return len(rented_out) > 0
 
@@ -225,9 +217,7 @@ class HouseholdAgent(mesa.Agent):
             scores.append(("buy", -np.inf))
 
         # RENT — always available; scored by rent burden
-        monthly_burden = avg_market_rent / max(
-            self.income, 1.0
-        )  # should be expectations!
+        monthly_burden = avg_market_rent / max(self.income, 1.0)  # should be expectations!
         rent_score = -monthly_burden
         scores.append(("rent", rent_score))
 
@@ -262,22 +252,16 @@ class HouseholdAgent(mesa.Agent):
         if not candidates:
             return None
         credit = self.model.credit
-        scores = [
-            (p, self._wtp_for_property(p, avg_market_rent, credit)) for p in candidates
-        ]
+        scores = [(p, self._wtp_for_property(p, avg_market_rent, credit)) for p in candidates]
         probs = _logit_probs(scores)
         props, weights = zip(*probs)
         return self.model.random.choices(list(props), weights=list(weights), k=1)[0]
 
-    def choose_rental(
-        self, rental_candidates
-    ):  # seems weird, no need to choose, just bid on all
+    def choose_rental(self, rental_candidates):  # seems weird, no need to choose, just bid on all
         """Select among available rentals. Prefers lower rent relative to income."""
         if not rental_candidates:
             return None
-        scores = [
-            (p, -p.estimated_value / max(self.income, 1.0)) for p in rental_candidates
-        ]
+        scores = [(p, -p.estimated_value / max(self.income, 1.0)) for p in rental_candidates]
         probs = _logit_probs(scores)
         props, weights = zip(*probs)
         return self.model.random.choices(list(props), weights=list(weights), k=1)[0]
@@ -288,9 +272,7 @@ class HouseholdAgent(mesa.Agent):
 
     def compute_bid(self, prop, avg_market_rent):
         """Truthful WTP bid for ownership."""
-        return self._wtp_for_property(
-            prop, avg_market_rent, self.model.credit, record_bind=True
-        )
+        return self._wtp_for_property(prop, avg_market_rent, self.model.credit, record_bind=True)
 
     def compute_rent_bid(self):
         """Maximum monthly rent bid (affordability ceiling)."""
@@ -360,9 +342,7 @@ class HouseholdAgent(mesa.Agent):
         # Compute outstanding mortgage balance
         if prop.id in self._mortgages:
             orig_price, ltv, steps_held = self._mortgages[prop.id]
-            outstanding = self.model.credit.outstanding_principal(
-                orig_price, ltv, steps_held
-            )
+            outstanding = self.model.credit.outstanding_principal(orig_price, ltv, steps_held)
         else:
             outstanding = 0.0
 
@@ -371,9 +351,7 @@ class HouseholdAgent(mesa.Agent):
 
         self.owned_properties.discard(prop.id)
         self._mortgages.pop(prop.id, None)
-        self._housing_asset_value = max(
-            0.0, self._housing_asset_value - prop.estimated_value
-        )
+        self._housing_asset_value = max(0.0, self._housing_asset_value - prop.estimated_value)
 
         # If sold home, become renter (unhoused until rental clears) - THIS SHOULD BE ONLY IF YOU'RE LIVING IN THE HOUSE YOURE SELLING
         if self.home_property == prop.id:
@@ -433,9 +411,7 @@ class HouseholdAgent(mesa.Agent):
         credit = self.model.credit
         ranked = [
             (
-                self._wtp_for_property(
-                    self.model._property_map[pid], avg_market_rent, credit
-                ),
+                self._wtp_for_property(self.model._property_map[pid], avg_market_rent, credit),
                 self.model._property_map[pid],
             )
             for pid in self.owned_properties
@@ -478,12 +454,8 @@ class HouseholdAgent(mesa.Agent):
     ):  # should just be a call to the expectations
         d = delta if delta is not None else self.model.config.expectations.delta
         noise_sd = self.model.config.expectations.noise_sd
-        self.expected_price_growth = adaptive_update(
-            self.expected_price_growth, price_signal, d
-        )
-        self.expected_rent_growth = adaptive_update(
-            self.expected_rent_growth, rent_signal, d
-        )
+        self.expected_price_growth = adaptive_update(self.expected_price_growth, price_signal, d)
+        self.expected_rent_growth = adaptive_update(self.expected_rent_growth, rent_signal, d)
         if noise_sd > 0.0:
             self.expected_price_growth += float(
                 self.model.rng.normal(0.0, noise_sd)
@@ -504,9 +476,7 @@ class HouseholdAgent(mesa.Agent):
         # positive feedback where a single high transaction inflates one
         # property's value and hence everyone's WTP for it. - WHAT THE HELL IS THIS
         market_price = (
-            self.model._price_history[-1]
-            if self.model._price_history
-            else prop.estimated_value
+            self.model._price_history[-1] if self.model._price_history else prop.estimated_value
         )
         # Expected capital gain via the configured mode, which breaks the
         # realised-price -> WTP -> realised-price feedback loop. In
@@ -540,9 +510,7 @@ class HouseholdAgent(mesa.Agent):
         # the current average market rent.
         zones = self.model.get_search_zones(self.home_zone)
         rental_props = [
-            p
-            for p in self.model.properties
-            if p.zone in zones and p.id != self.home_property
+            p for p in self.model.properties if p.zone in zones and p.id != self.home_property
         ]
         best_monthly_rent = 0.0
         for rp in rental_props:
@@ -652,9 +620,7 @@ class InstitutionalAgent(mesa.Agent):
         scores = []
 
         if purchase_candidates:
-            best_wtp = max(
-                self._wtp_for_property(p, avg_rent) for p in purchase_candidates
-            )
+            best_wtp = max(self._wtp_for_property(p, avg_rent) for p in purchase_candidates)
             scores.append(("buy", best_wtp))
         else:
             scores.append(("buy", -np.inf))
@@ -715,17 +681,14 @@ class InstitutionalAgent(mesa.Agent):
         self.portfolio.discard(prop.id)
         if prop.id in self._mortgages:
             orig_price, ltv, steps_held = self._mortgages[prop.id]
-            outstanding = self.model.credit.outstanding_principal(
-                orig_price, ltv, steps_held
-            )
+            outstanding = self.model.credit.outstanding_principal(orig_price, ltv, steps_held)
         else:
             outstanding = 0.0
 
         self.cash += sale_price - outstanding
         self._housing_asset_value = max(
             0.0,
-            self._housing_asset_value
-            - prop.estimated_value,  # why is this estimated? WHAT THE ???
+            self._housing_asset_value - prop.estimated_value,  # why is this estimated? WHAT THE ???
         )
         self._mortgages.pop(prop.id, None)
 
@@ -771,12 +734,8 @@ class InstitutionalAgent(mesa.Agent):
     ):  # Needs update for current isnglas
         d = delta if delta is not None else self.model.config.expectations.delta
         noise_sd = self.model.config.expectations.noise_sd
-        self.expected_price_growth = adaptive_update(
-            self.expected_price_growth, price_signal, d
-        )
-        self.expected_rent_growth = adaptive_update(
-            self.expected_rent_growth, rent_signal, d
-        )
+        self.expected_price_growth = adaptive_update(self.expected_price_growth, price_signal, d)
+        self.expected_rent_growth = adaptive_update(self.expected_rent_growth, rent_signal, d)
         if noise_sd > 0.0:  # what is this?
             self.expected_price_growth += float(
                 self.model.rng.normal(0.0, noise_sd)
@@ -794,9 +753,7 @@ class InstitutionalAgent(mesa.Agent):
         # Use market-average price for expected capital gains (see household
         # comment above) to avoid property-specific positive feedback loops.
         market_price = (  # why is this relevant ?
-            self.model._price_history[-1]
-            if self.model._price_history
-            else prop.estimated_value
+            self.model._price_history[-1] if self.model._price_history else prop.estimated_value
         )
         # Same configured capital-gain treatment as households (see helper):
         # "fixed_level" or rent-sourced "bounded_growth" to break the price loop - what is this ! No !

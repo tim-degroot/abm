@@ -1,13 +1,6 @@
 """
-Policy layer.
-
-Policies intercept and modify credit conditions, agent actions,
-or market outcomes. They are injected into the model at construction
-time and called at defined hooks.
-
-Future policy implementations (LTV caps, transaction taxes, rent controls,
-investor restrictions, subsidies) slot into this framework without
-modifying model, agent, or market code.
+Policies intercept and modify economic variables.
+They are injected into the model at construction.
 """
 
 

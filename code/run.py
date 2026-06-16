@@ -167,9 +167,7 @@ def run_experiment(args):
     print(f"  Post-shock HH marginal pricer share (avg): {post_avg:.3f}")
 
     direction = (
-        "\u2193 institutions gaining"
-        if post_avg < pre_avg
-        else "\u2191 households dominant"
+        "\u2193 institutions gaining" if post_avg < pre_avg else "\u2191 households dominant"
     )
     print(f"  Direction: {direction}")
     print("=" * 60)
@@ -210,9 +208,7 @@ def run_report(args):
             if not props:
                 continue
             avg_est_val = float(sum(p.estimated_value for p in props) / len(props))
-            ownership_rate = float(
-                sum(1 for p in props if p.owner_id is not None) / len(props)
-            )
+            ownership_rate = float(sum(1 for p in props if p.owner_id is not None) / len(props))
             inst_share = (
                 float(
                     sum(
@@ -232,14 +228,10 @@ def run_report(args):
                 else 0.0
             )
             txns = [
-                t
-                for t in m.this_step_transactions
-                if m._property_map[t.property_id].zone == zone
+                t for t in m.this_step_transactions if m._property_map[t.property_id].zone == zone
             ]
             txn_vol = len(txns)
-            avg_txn_price = (
-                float(sum(t.price for t in txns) / len(txns)) if txns else float("nan")
-            )
+            avg_txn_price = float(sum(t.price for t in txns) / len(txns)) if txns else float("nan")
 
             zone_rows.append(
                 {
@@ -259,11 +251,7 @@ def run_report(args):
     df_filled = df.copy()
     for col in ("avg_sale_price", "avg_rent"):
         if col in df_filled.columns:
-            med = (
-                float(df_filled[col].median(skipna=True))
-                if df_filled[col].notna().any()
-                else 0.0
-            )
+            med = float(df_filled[col].median(skipna=True)) if df_filled[col].notna().any() else 0.0
             df_filled[col + "_filled"] = df_filled[col].ffill().fillna(med)
 
     df_filled.to_csv(out_csv)
@@ -277,9 +265,7 @@ def run_report(args):
     ax = axes.flatten()
 
     if "avg_sale_price_filled" in df_filled.columns:
-        df_filled["avg_sale_price_filled"].plot(
-            ax=ax[0], title="Average Sale Price (filled)"
-        )
+        df_filled["avg_sale_price_filled"].plot(ax=ax[0], title="Average Sale Price (filled)")
     elif "avg_sale_price" in df.columns:
         df["avg_sale_price"].plot(ax=ax[0], title="Average Sale Price")
     else:
@@ -301,9 +287,7 @@ def run_report(args):
         "household_ownership_share_of_stock",
         "institutional_ownership_share",
     }.issubset(df_filled.columns):
-        df_filled["household_ownership_share_of_stock"].plot(
-            ax=ax[3], title="Housing Stock Shares"
-        )
+        df_filled["household_ownership_share_of_stock"].plot(ax=ax[3], title="Housing Stock Shares")
         df_filled["institutional_ownership_share"].plot(ax=ax[3])
         ax[3].legend(["household stock share", "institutional stock share"])
     elif "institutional_ownership_share" in df_filled.columns:
@@ -311,9 +295,7 @@ def run_report(args):
             ax=ax[3], title="Institutional Ownership Share"
         )
     elif "inst_property_count" in df_filled.columns:
-        df_filled["inst_property_count"].plot(
-            ax=ax[3], title="Institutional Property Count"
-        )
+        df_filled["inst_property_count"].plot(ax=ax[3], title="Institutional Property Count")
     else:
         ax[3].text(0.5, 0.5, "Institutional data not collected", ha="center")
 
@@ -377,9 +359,7 @@ def run_large(args):
     if "ownership_rate" in df.columns:
         df["ownership_rate"].plot(ax=ax[2], title="Household Ownership Rate")
     if "institutional_ownership_share" in df.columns:
-        df["institutional_ownership_share"].plot(
-            ax=ax[3], title="Institutional Ownership Share"
-        )
+        df["institutional_ownership_share"].plot(ax=ax[3], title="Institutional Ownership Share")
     plt.tight_layout()
     fig.savefig(out_png)
     print(f"Wrote {out_csv} and {out_png}")
@@ -417,16 +397,10 @@ def main():
     p.set_defaults(func=run_report)
 
     # large
-    p = sub.add_parser(
-        "large", help="Run large-scale configuration with summary charts"
-    )
+    p = sub.add_parser("large", help="Run large-scale configuration with summary charts")
     _add_common_args(p)
-    p.add_argument(
-        "--out", default="report_summary_large.png", help="Output PNG filename"
-    )
-    p.add_argument(
-        "--csv", default="model_timeseries_large.csv", help="Output CSV filename"
-    )
+    p.add_argument("--out", default="report_summary_large.png", help="Output PNG filename")
+    p.add_argument("--csv", default="model_timeseries_large.csv", help="Output CSV filename")
     p.set_defaults(func=run_large)
 
     args = parser.parse_args()

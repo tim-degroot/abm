@@ -1,4 +1,7 @@
-"""Data-collector reporters passed to Mesa's DataCollector."""
+"""Data-collector reporters passed to Mesa's DataCollector.
+
+All functions take the model as their argument.
+"""
 
 import numpy as np
 from agents import HouseholdAgent, InstitutionalAgent
@@ -35,7 +38,7 @@ def institutional_ownership_share(model):
     return inst_owned / total
 
 
-def household_ownership_share_of_stock(model):
+def household_ownership_share(model):
     """Fraction of total housing stock owned by households."""
     total = len(model.properties)
     if total == 0:
@@ -79,7 +82,7 @@ def total_household_net_worth(model):
 
 
 def price_to_rent_ratio(model):
-    """Average estimated value / average current rent (target: 20-30x)."""
+    """Average estimated value / average current rent."""
     rents = [
         p.current_rent
         for p in model.properties
@@ -131,7 +134,7 @@ MODEL_REPORTERS = {
     "transaction_volume": transaction_volume,
     "ownership_rate": ownership_rate,
     "institutional_ownership_share": institutional_ownership_share,
-    "household_ownership_share_of_stock": household_ownership_share_of_stock,
+    "household_ownership_share": household_ownership_share,
     "avg_rent": avg_rent,
     "rental_transaction_volume": rental_transaction_volume,
     "household_marginal_pricer_share": household_marginal_pricer_share,
