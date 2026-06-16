@@ -718,7 +718,7 @@ class HousingModel(mesa.Model):
 
         # 5 & 6. Market clearing
         sale_txns = ownership_market.resolve()
-        rental_txns = rental_market.resolve()
+        rental_txns = rental_market.resolve(rng=self.rng)
 
         # 7. Apply transactions
         self._apply_ownership_transactions(sale_txns)
@@ -1094,19 +1094,9 @@ class HousingModel(mesa.Model):
                             ]
                     if rental_candidates:
                         rent_bid = agent.compute_rent_bid()
-                        chosen = agent.choose_rental(rental_candidates)
-                        targets = [chosen] if chosen is not None else []
-                        # One logit draw, then deterministic fill; richer utility is later scope.
-                        targets += [
-                            p
-                            for p in sorted(
-                                rental_candidates, key=lambda p: p.quality, reverse=True
-                            )
-                            if p not in targets
-                        ][: 3 - len(targets)]
-                        for chosen in targets:
-                            if rent_bid > 0:
-                                # Log rental bid (guarded)
+
+                        if rent_bid > 0:
+                            for chosen in rental_candidates:
                                 if self._debug_bid_logging:
                                     self._debug_rental_bid_log.append(
                                         {
@@ -1116,7 +1106,12 @@ class HousingModel(mesa.Model):
                                             "amount": float(rent_bid),
                                         }
                                     )
-                                rental_market.submit_bid(chosen.id, agent.unique_id, rent_bid)
+
+                                rental_market.submit_bid(
+                                    chosen.id,
+                                    agent.unique_id,
+                                    rent_bid,
+                                )
                                 self._debug_counts["rental_bids_submitted"] += 1
                                 self._debug_counts["rental_bid_samples"].append(rent_bid)
 
@@ -1386,11 +1381,18 @@ class HousingModel(mesa.Model):
 
     def _reservation_rent(self, prop):
         """
-        Minimum rent a landlord will accept.
-        Anchored to the configured gross yield on purchase anchor price.
+        Minimum monthly rent a landlord will accept.
+
+        Anchored to the configured gross annual yield on purchase anchor price,
+        converted to a monthly rent.
         """
         mcfg = self.config.market
-        return prop.purchase_anchor_price
+        yield_rent = (
+            prop.purchase_anchor_price
+            * mcfg.landlord_reservation_yield
+            / 12.0
+        )
+        return max(mcfg.min_reservation_rent, yield_rent)
 
     def _seller_reservation(self, prop, seller_agent):
         """

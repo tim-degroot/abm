@@ -256,15 +256,6 @@ class HouseholdAgent(mesa.Agent):
         props, weights = zip(*probs)
         return self.model.random.choices(list(props), weights=list(weights), k=1)[0]
 
-    def choose_rental(self, rental_candidates):  # seems weird, no need to choose, just bid on all
-        """Select among available rentals. Prefers lower rent relative to income."""
-        if not rental_candidates:
-            return None
-        scores = [(p, -p.estimated_value / max(self.income, 1.0)) for p in rental_candidates]
-        probs = _logit_probs(scores)
-        props, weights = zip(*probs)
-        return self.model.random.choices(list(props), weights=list(weights), k=1)[0]
-
     # ------------------------------------------------------------------
     # Stage 3: Bid formation
     # ------------------------------------------------------------------
@@ -353,6 +344,8 @@ class HouseholdAgent(mesa.Agent):
         self._housing_asset_value = max(0.0, self._housing_asset_value - prop.estimated_value)
 
         # If sold home, become renter (unhoused until rental clears) - THIS SHOULD BE ONLY IF YOU'RE LIVING IN THE HOUSE YOURE SELLING
+        # this should be working release_property() only clears home_property if self.home_property == prop.id
+        
         if self.home_property == prop.id:
             self.home_property = None
 

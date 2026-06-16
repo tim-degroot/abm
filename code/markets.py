@@ -133,14 +133,49 @@ class RentalMarket(BaseMarket):
             winning_rent_bid=top_bid["amount"],
         )
 
-    def resolve(self):
-        """Settle auctions, then keep only each tenant's highest-rent win."""
-        transactions = super().resolve()
-        winners = []
-        winning_tenants = set()
-        for txn in sorted(transactions, key=lambda t: (-t.winning_rent_bid, t.property_id)):
-            if txn.tenant_id in winning_tenants:
+    def resolve(self, rng=None):
+        """
+        Sequential rental clearing. Households may bid on multiple feasible rentals. Once a household wins
+        one rental, it is removed from later rental auctions in the same clearing
+        round.
+        """
+        property_ids = list(self._listings.keys())
+
+        if rng is not None and len(property_ids) > 1:
+            if hasattr(rng, "permutation"):
+                order = rng.permutation(len(property_ids))
+                property_ids = [property_ids[int(i)] for i in order]
+            elif hasattr(rng, "shuffle"):
+                rng.shuffle(property_ids)
+
+        transactions = []
+        assigned_tenants = set()
+
+        for property_id in property_ids:
+            listing = self._listings[property_id]
+            reservation = listing["reservation"]
+
+            bids = [
+                b for b in listing["bids"]
+                if b["bidder_id"] not in assigned_tenants
+            ]
+            if not bids:
                 continue
-            winners.append(txn)
-            winning_tenants.add(txn.tenant_id)
-        return winners
+
+            sorted_bids = sorted(bids, key=lambda b: b["amount"], reverse=True)
+            top_bid = sorted_bids[0]
+
+            if top_bid["amount"] <= 0 or top_bid["amount"] < reservation:
+                continue
+
+            if len(sorted_bids) >= 2:
+                price = max(sorted_bids[1]["amount"], reservation)
+            else:
+                price = max(top_bid["amount"], reservation)
+
+            transactions.append(
+                self._create_transaction(property_id, listing, top_bid, price)
+            )
+            assigned_tenants.add(top_bid["bidder_id"])
+
+        return transactions
