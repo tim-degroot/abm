@@ -1265,7 +1265,7 @@ class HousingModel(mesa.Model):
                                         ),
                                     }
                                 )
-                            ownership_market.submit_bid_with_ltv(
+                            ownership_market.submit_bid(
                                 chosen.id,
                                 agent.unique_id,
                                 bid,
@@ -1372,7 +1372,7 @@ class HousingModel(mesa.Model):
                                     "fire_sale": True,
                                 }
                             )
-                        ownership_market.submit_bid_with_ltv(
+                        ownership_market.submit_bid(
                             chosen.id,
                             agent.unique_id,
                             bid,
