@@ -725,19 +725,18 @@ Research hypothesis: *Credit conditions dominate housing outcomes by shifting wh
 
 ## Core SA Inputs (11 parameters)
 
-| # | Parameter | Config key | Channel |
-|---|-----------|------------|---------|
-| 1 | Mortgage rate | `credit.mortgage_rate` | Owner-occupier WTP ↓ |
-| 2 | LTV limit | `credit.ltv_limit` | Deposit constraint binds |
-| 3 | DTI limit | `credit.dti_limit` | Income constraint binds |
-| 4 | BTL funding rate | `credit.btl_funding_rate` | Landlord WTP ↓ (§6) |
-| 5 | BTL LTV | `credit.btl_ltv` | Landlord deposit constraint |
-| 6 | Institutional required return | `agent.inst_required_return` | Institution activity threshold |
-| 7 | Institutional LTV | `agent.inst_ltv` | Institution WTP |
-| 8 | Expectation persistence δ | `expectations.delta` | Expectation momentum (§7) |
-| 9 | Risk aversion μ | `agent_init.risk_aversion_mu` | Bid shading (§8) |
-| 10 | Owner loss aversion λ | `market.loss_aversion_owner` | Price stickiness, volume collapse (§5) |
-| 11 | Action logit temperature β | `agent.beta_action` | Noise in action choice (§10) |
+| #   | Parameter                     | Config key                    | Channel                                |
+| --- | ----------------------------- | ----------------------------- | -------------------------------------- |
+| 1   | Mortgage rate                 | `credit.mortgage_rate`        | Owner-occupier WTP ↓                   |
+| 2   | LTV limit                     | `credit.ltv_limit`            | Deposit constraint binds               |
+| 3   | DTI limit                     | `credit.dti_limit`            | Income constraint binds                |
+| 4   | BTL funding rate              | `credit.btl_funding_rate`     | Landlord WTP ↓ (§6)                    |
+| 5   | BTL LTV                       | `credit.btl_ltv`              | Landlord deposit constraint            |
+| 6   | Institutional required return | `agent.inst_required_return`  | Institution activity threshold         |
+| 7   | Institutional LTV             | `agent.inst_ltv`              | Institution WTP                        |
+| 8   | Expectation persistence δ     | `expectations.delta`          | Expectation momentum (§7)              |
+| 9   | Risk aversion μ               | `agent_init.risk_aversion_mu` | Bid shading (§8)                       |
+| 10  | Owner loss aversion λ         | `market.loss_aversion_owner`  | Price stickiness, volume collapse (§5) |
 
 All other `config.toml` parameters (spatial, property init, income/wealth distributions, lease parameters) are held at fixed, plausible (stylised) values and are not SA targets.
 
@@ -801,20 +800,20 @@ The central contribution is the proposition that housing-market dynamics can be 
 
 Every model period represents **one calendar month**. All flows, rates, and durations consistently use monthly units:
 
-| Concept | Period unit | Usage |
-|---------|-------------|-------|
-| Mortgage payment | monthly | Annuity formula uses `r/12` periodic rate and `n×12` periods |
-| Income | monthly | DTI check: `payment ≤ α × monthly_income` |
-| Rent | monthly | Already monthly in implementation (no change needed) |
-| Mortgage rate | per month | 0.05 p.a. → 0.004167 per month |
-| Funding rate | per month | 0.03 p.a. → 0.0025 per month |
-| BTL funding rate | per month | 0.06 p.a. → 0.005 per month |
-| Loan term | months | 25 years → 300 months |
-| `E[dp]` (expected capital gain) | £ per month | fixed_level: 2000 p.a. → ~166.67 per month |
-| Price-to-income ceiling | × monthly income | 4.5 × annual → 54 × monthly (same effective cap) |
-| Price-to-rent ceiling | × monthly rent | 25 × annual → 300 × monthly (same effective cap) |
-| `steps_held` | months | Incremented by 1 each step |
-| `tenancy_months` | months | Incremented by 1 each step (replaces `tenancy_quarters`) |
+| Concept                         | Period unit      | Usage                                                        |
+| ------------------------------- | ---------------- | ------------------------------------------------------------ |
+| Mortgage payment                | monthly          | Annuity formula uses `r/12` periodic rate and `n×12` periods |
+| Income                          | monthly          | DTI check: `payment ≤ α × monthly_income`                    |
+| Rent                            | monthly          | Already monthly in implementation (no change needed)         |
+| Mortgage rate                   | per month        | 0.05 p.a. → 0.004167 per month                               |
+| Funding rate                    | per month        | 0.03 p.a. → 0.0025 per month                                 |
+| BTL funding rate                | per month        | 0.06 p.a. → 0.005 per month                                  |
+| Loan term                       | months           | 25 years → 300 months                                        |
+| `E[dp]` (expected capital gain) | £ per month      | fixed_level: 2000 p.a. → ~166.67 per month                   |
+| Price-to-income ceiling         | × monthly income | 4.5 × annual → 54 × monthly (same effective cap)             |
+| Price-to-rent ceiling           | × monthly rent   | 25 × annual → 300 × monthly (same effective cap)             |
+| `steps_held`                    | months           | Incremented by 1 each step                                   |
+| `tenancy_months`                | months           | Incremented by 1 each step (replaces `tenancy_quarters`)     |
 
 **Why monthly rather than annual**: monthly calibration aligns with real-world mortgage payment cycles, rent payment cycles, and income receipt cycles. It produces smoother price and rent series, avoids discretisation artefacts from chunky annual payments, and allows realistic lease terms (minimum 12 months, not 4 quarters). The cost is 12× more steps for the same calendar time, and all per-period growth rates and transition probabilities must be rescaled (means ÷12; standard deviations ÷√12; Markov diagonal entries ≈ (11+p)/12).
 
@@ -849,19 +848,6 @@ Priority-ordered. Everything below follows this plan unless there is a very good
 11. Add spatial quality clustering behind `quality_clustering` flag and test.
 12. Expand visual diagnostics by agent type.
 13. Run mirror experiments (§20) and sensitivity analysis (§22).
-
----
-
-# 29. Configuration Pruning Candidates
-
-The following config options should be collapsed once the baseline is stable:
-
-| Option | Action |
-|--------|--------|
-| `capital_gain_mode` + `capital_gain_growth_min/max` | Commit to `fixed_level` permanently |
-| `ownership_mode` | Drop `"target"`, keep only `"emergent"` |
-| `inst_cash_low` / `inst_cash_high` | Replace with single fixed value |
-| `inst_funding_rate_low` / `inst_funding_rate_high` | Replace with single fixed value |
 
 ---
 

@@ -137,7 +137,9 @@ class HousingModel(mesa.Model):
         self._avg_rent = self._current_avg_rent()
         self._rent_history.append(self._avg_rent)
 
-        self.current_macro_state = getattr(self.config.macro, "initial_state", "Neutral")
+        self.current_macro_state = getattr(
+            self.config.macro, "initial_state", "Neutral"
+        )
 
         # Per-step registers
         self.this_step_transactions = []
@@ -335,16 +337,15 @@ class HousingModel(mesa.Model):
         # neighbouring zones have correlated quality means. Simple iterative
         # averaging implements spatial autocorrelation controlled by
         # `clustering_strength` in config.
-        if getattr(pcfg, "quality_clustering", False):
-            c = float(pcfg.clustering_strength)
-            # Perform a few relaxation iterations for smoother fields.
-            for _ in range(3):
-                new_means = zone_means.copy()
-                for z in range(n_zones):
-                    neigh = list(self._zone_adjacency[z])
-                    neigh_mean = float(np.mean([zone_means[i] for i in neigh]))
-                    new_means[z] = (1.0 - c) * zone_means[z] + c * neigh_mean
-                zone_means = new_means
+        c = float(pcfg.clustering_strength)
+        # Perform a few relaxation iterations for smoother fields.
+        for _ in range(3):
+            new_means = zone_means.copy()
+            for z in range(n_zones):
+                neigh = list(self._zone_adjacency[z])
+                neigh_mean = float(np.mean([zone_means[i] for i in neigh]))
+                new_means[z] = (1.0 - c) * zone_means[z] + c * neigh_mean
+            zone_means = new_means
 
         # Distribute properties evenly: each zone gets its quota
         base = n_properties // n_zones
@@ -387,7 +388,7 @@ class HousingModel(mesa.Model):
         """
         Create agents with heterogeneous attributes.
 
-        Households: income       ~ LogNormal(log(income_median), income_sigma).
+        Households: income       ~ LogNormal(log(income_mean), income_sigma).
                     total wealth  ~ Uniform(wealth_income_mult_low, _high)*income.
                                     NOTE: `cash` initially holds TOTAL wealth; the
                                     deposit on any property owned at init is later
@@ -400,7 +401,7 @@ class HousingModel(mesa.Model):
         """
         acfg = self.config.agent_init
         incomes = self.rng.lognormal(
-            np.log(acfg.income_median), acfg.income_sigma, n_households
+            np.log(acfg.income_mean), acfg.income_sigma, n_households
         )
         wealth_mult = self.rng.uniform(
             acfg.wealth_income_mult_low, acfg.wealth_income_mult_high, n_households
@@ -492,7 +493,7 @@ class HousingModel(mesa.Model):
             prop.listed_for_rent = True  # let-out (landlord) property
         return True
 
-    def _init_ownership_and_tenure(self):
+    def _init_ownership_and_tenure(self):  # BROKEN USES TARGETS WE REMOVED
         """
         Allocate properties and DERIVE balance sheets (plan §17-18).
 
@@ -599,9 +600,8 @@ class HousingModel(mesa.Model):
             rental_pool.remove(prop)
             prop.occupant_id = hh.unique_id
             prop.listed_for_rent = False
-            prop.current_rent = max(
-                self.config.market.min_reservation_rent,
-                prop.estimated_value * self.config.market.initial_rent_yield / 12.0,
+            prop.current_rent = (
+                prop.estimated_value * self.config.market.initial_rent_yield / 12.0
             )
             hh.home_property = prop.id
             hh.home_zone = prop.zone
@@ -626,11 +626,8 @@ class HousingModel(mesa.Model):
             if p.occupant_id is None and p.owner_id is not None:
                 p.listed_for_rent = True
                 if p.current_rent is None:
-                    p.current_rent = max(
-                        self.config.market.min_reservation_rent,
-                        p.estimated_value
-                        * self.config.market.initial_rent_yield
-                        / 12.0,
+                    p.current_rent = (
+                        p.estimated_value * self.config.market.initial_rent_yield / 12.0
                     )
 
         self._verify_accounting()
@@ -668,7 +665,7 @@ class HousingModel(mesa.Model):
         ]
         if allocated:
             return [float(np.mean(allocated))]
-        return [self.config.market.fallback_price]
+        return None
 
     def _estimate_initial_rent(self):
         """Monthly rent proxy from the configured gross yield on median property price."""
@@ -822,10 +819,7 @@ class HousingModel(mesa.Model):
         income = getattr(tenant, "income", None)
         if income is None or income <= 0:
             return False
-        return (
-            monthly_rent
-            <= self.config.valuation.rent_income_fraction * income
-        )
+        return monthly_rent <= income
 
     def _service_rents(self):
         """Collect current rents; tenants who cannot pay vacate immediately."""
@@ -839,7 +833,10 @@ class HousingModel(mesa.Model):
                 continue
 
             tenant = self._agent_map.get(prop.occupant_id)
-            if not isinstance(tenant, HouseholdAgent) or tenant.home_property != prop.id:
+            if (
+                not isinstance(tenant, HouseholdAgent)
+                or tenant.home_property != prop.id
+            ):
                 continue
 
             rent = prop.current_rent
@@ -888,9 +885,6 @@ class HousingModel(mesa.Model):
         touched.
         """
         mcfg = self.config.market
-        base_prob = mcfg.lease_expiry_prob
-        early_prob = mcfg.lease_early_exit_prob
-        min_m = mcfg.min_lease_months
 
         for prop in self.properties:
             # Active tenancy = someone occupies a property they do not own.
@@ -1092,10 +1086,7 @@ class HousingModel(mesa.Model):
                         continue
 
                     if action == "sell":
-                        reservation = (
-                            prop.purchase_anchor_price
-                            * self.config.market.inst_sell_reservation_discount
-                        )
+                        reservation = prop.purchase_anchor_price
                         ownership_market.list_property(
                             pid, agent.unique_id, reservation
                         )
@@ -1180,12 +1171,6 @@ class HousingModel(mesa.Model):
                     wants_rental = True
                 elif self._tenant_locked_in(agent):
                     wants_rental = False
-                elif agent.is_renter:
-                    wants_rental = (
-                        self.rng.random()
-                        < self.config.market.renter_research_prob
-                    )
-                    voluntary_move = wants_rental
                 else:
                     wants_rental = action == "rent"
 
@@ -1448,7 +1433,9 @@ class HousingModel(mesa.Model):
             deposit = prop.estimated_value * (1.0 - ltv)
             if agent.cash < current_due + deposit:
                 return False
-            new_payment = self.credit.monthly_mortgage_payment(prop.estimated_value, ltv)
+            new_payment = self.credit.monthly_mortgage_payment(
+                prop.estimated_value, ltv
+            )
             return current_due + new_payment <= self.credit.dti_limit * agent.income
 
         if isinstance(agent, InstitutionalAgent):
@@ -1527,10 +1514,7 @@ class HousingModel(mesa.Model):
         Anchored to the configured gross yield on purchase anchor price.
         """
         mcfg = self.config.market
-        return max(
-            mcfg.min_reservation_rent,
-            prop.purchase_anchor_price * mcfg.landlord_reservation_yield / 12.0,
-        )
+        return prop.purchase_anchor_price
 
     def _seller_reservation(self, prop, seller_agent):
         """
@@ -1547,7 +1531,7 @@ class HousingModel(mesa.Model):
 
         # Institution sellers are not loss-averse
         if isinstance(seller_agent, InstitutionalAgent):
-            return p0 * cfg.market.inst_sell_reservation_discount
+            return p0
 
         # Choose lambda depending on whether owner-occupier or landlord
         if isinstance(seller_agent, HouseholdAgent) and seller_agent.is_owner_occupier:
@@ -1557,7 +1541,7 @@ class HousingModel(mesa.Model):
 
         if p0 <= expected:
             # No nominal loss relative to expectation: accept near anchor/discount
-            return p0 * cfg.market.household_sell_reservation_discount
+            return p0
 
         # Nominal loss: increase reservation above anchor by lambda * shortfall
         shortfall = p0 - expected
@@ -1611,10 +1595,7 @@ class HousingModel(mesa.Model):
             # Update estimated value with smoothing to avoid single-transaction
             # shocks instantly inflating mark-to-market. The smoothing alpha is
             # configurable via `config.market.estimated_value_smooth_alpha`.
-            alpha = getattr(self.config.market, "estimated_value_smooth_alpha", 1.0)
-            prop.estimated_value = float(
-                alpha * txn.price + (1.0 - alpha) * prop.estimated_value
-            )
+
             prop.listed_for_sale = False
             prop.listed_for_rent = False
             prop.current_rent = None
@@ -1682,7 +1663,10 @@ class HousingModel(mesa.Model):
                 old_home = tenant.home_property
                 if old_home is not None and old_home != prop.id:
                     old_prop = self._property_map.get(old_home)
-                    if old_prop is not None and old_prop.occupant_id == tenant.unique_id:
+                    if (
+                        old_prop is not None
+                        and old_prop.occupant_id == tenant.unique_id
+                    ):
                         old_prop.occupant_id = None
                         old_prop.tenancy_quarters = 0
                         if old_home not in tenant.owned_properties:
@@ -1724,7 +1708,7 @@ class HousingModel(mesa.Model):
         elif self._price_history:
             period_avg = self._price_history[-1]
         else:
-            period_avg = self.config.market.fallback_price
+            period_avg = None
         self._price_history.append(period_avg)
 
         current_avg_rent = self._current_avg_rent()

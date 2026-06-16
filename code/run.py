@@ -27,6 +27,7 @@ _RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def _ensure_results_dir():
     os.makedirs(_RESULTS_DIR, exist_ok=True)
 
@@ -39,6 +40,7 @@ def _resolve_path(name):
 # ---------------------------------------------------------------------------
 # baseline  —  console-printing simulation, writes CSV
 # ---------------------------------------------------------------------------
+
 
 def run_baseline(args):
     from config import load_config
@@ -115,6 +117,7 @@ def run_baseline(args):
 # experiment  —  credit-tightening shock at step 240
 # ---------------------------------------------------------------------------
 
+
 def run_experiment(args):
     from config import load_config
     from model import HousingModel
@@ -164,7 +167,9 @@ def run_experiment(args):
     print(f"  Post-shock HH marginal pricer share (avg): {post_avg:.3f}")
 
     direction = (
-        "\u2193 institutions gaining" if post_avg < pre_avg else "\u2191 households dominant"
+        "\u2193 institutions gaining"
+        if post_avg < pre_avg
+        else "\u2191 households dominant"
     )
     print(f"  Direction: {direction}")
     print("=" * 60)
@@ -176,8 +181,10 @@ def run_experiment(args):
 # report  —  longer run + per-zone metrics + summary charts
 # ---------------------------------------------------------------------------
 
+
 def run_report(args):
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import pandas as pd
@@ -270,7 +277,9 @@ def run_report(args):
     ax = axes.flatten()
 
     if "avg_sale_price_filled" in df_filled.columns:
-        df_filled["avg_sale_price_filled"].plot(ax=ax[0], title="Average Sale Price (filled)")
+        df_filled["avg_sale_price_filled"].plot(
+            ax=ax[0], title="Average Sale Price (filled)"
+        )
     elif "avg_sale_price" in df.columns:
         df["avg_sale_price"].plot(ax=ax[0], title="Average Sale Price")
     else:
@@ -292,13 +301,19 @@ def run_report(args):
         "household_ownership_share_of_stock",
         "institutional_ownership_share",
     }.issubset(df_filled.columns):
-        df_filled["household_ownership_share_of_stock"].plot(ax=ax[3], title="Housing Stock Shares")
+        df_filled["household_ownership_share_of_stock"].plot(
+            ax=ax[3], title="Housing Stock Shares"
+        )
         df_filled["institutional_ownership_share"].plot(ax=ax[3])
         ax[3].legend(["household stock share", "institutional stock share"])
     elif "institutional_ownership_share" in df_filled.columns:
-        df_filled["institutional_ownership_share"].plot(ax=ax[3], title="Institutional Ownership Share")
+        df_filled["institutional_ownership_share"].plot(
+            ax=ax[3], title="Institutional Ownership Share"
+        )
     elif "inst_property_count" in df_filled.columns:
-        df_filled["inst_property_count"].plot(ax=ax[3], title="Institutional Property Count")
+        df_filled["inst_property_count"].plot(
+            ax=ax[3], title="Institutional Property Count"
+        )
     else:
         ax[3].text(0.5, 0.5, "Institutional data not collected", ha="center")
 
@@ -311,8 +326,10 @@ def run_report(args):
 # large  —  large-scale run with summary charts
 # ---------------------------------------------------------------------------
 
+
 def run_large(args):
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import pandas as pd
@@ -328,8 +345,8 @@ def run_large(args):
         n_households=1000,
         n_institutions=50,
         n_properties=1200,
-        target_ownership_rate=base.sim.target_ownership_rate,
-        inst_ownership_share=base.sim.inst_ownership_share,
+        target_ownership_rate=base.sim.target_ownership_rate,  # these should have been removed
+        inst_ownership_share=base.sim.inst_ownership_share,  # these should have been removed
         seed=base.sim.seed,
         n_steps=steps,
         ownership_mode=base.sim.ownership_mode,
@@ -368,7 +385,9 @@ def run_large(args):
     if "ownership_rate" in df.columns:
         df["ownership_rate"].plot(ax=ax[2], title="Household Ownership Rate")
     if "institutional_ownership_share" in df.columns:
-        df["institutional_ownership_share"].plot(ax=ax[3], title="Institutional Ownership Share")
+        df["institutional_ownership_share"].plot(
+            ax=ax[3], title="Institutional Ownership Share"
+        )
     plt.tight_layout()
     fig.savefig(out_png)
     print(f"Wrote {out_csv} and {out_png}")
@@ -377,6 +396,7 @@ def run_large(args):
 # ---------------------------------------------------------------------------
 # CLI dispatch
 # ---------------------------------------------------------------------------
+
 
 def _add_common_args(parser):
     parser.add_argument("--steps", "-s", type=int, help="number of simulation steps")
@@ -405,10 +425,16 @@ def main():
     p.set_defaults(func=run_report)
 
     # large
-    p = sub.add_parser("large", help="Run large-scale configuration with summary charts")
+    p = sub.add_parser(
+        "large", help="Run large-scale configuration with summary charts"
+    )
     _add_common_args(p)
-    p.add_argument("--out", default="report_summary_large.png", help="Output PNG filename")
-    p.add_argument("--csv", default="model_timeseries_large.csv", help="Output CSV filename")
+    p.add_argument(
+        "--out", default="report_summary_large.png", help="Output PNG filename"
+    )
+    p.add_argument(
+        "--csv", default="model_timeseries_large.csv", help="Output CSV filename"
+    )
     p.set_defaults(func=run_large)
 
     args = parser.parse_args()

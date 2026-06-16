@@ -15,8 +15,11 @@ fire sale should stop when enough are siled
 if you sell a property someone lives in you have to kick them out!
 what is prop.estimated value 
 what happens to properties which are not sold in a given period, do they get unliseted the next period?
-
-
+use shares not rates
+is inst_ltv and required return varying with macro enviornment?
+ household should have cheaper funding than institutional
+ smoothing valuations   
+ ewma
 
 What is missing in the code to match NewPlan.md. Grouped by plan section.
 Priority tags: [P0] blocking core claims · [P1] important · [P2] polish.
@@ -48,7 +51,6 @@ Priority tags: [P0] blocking core claims · [P1] important · [P2] polish.
 - [P1] Implement reservation price as the indifference solution V_hold = V_sell(p_res); code uses anchor×discount heuristic.
 
 ## §11 — WTP / valuation
-- [P2] Decide quality handling: plan uses q_k directly; code uses quality_value_scale × rent. Normalise/weight per §29.7.
 - [P2] Add institutional required-return reconciliation so r_f < r_f^BTL still guarantees higher institutional ceiling (§11).
 
 ## §12 — Rental market
@@ -56,7 +58,6 @@ Priority tags: [P0] blocking core claims · [P1] important · [P2] polish.
 - [P2] Rental property selection by utility/logit; code ranks by -price/income.
 
 ## §17 — Initialization
-- [P0] Cap institutional stock at `inst_ownership_share` (0.10); code assigns ALL residual stock to institutions (causes institutional dominance, §29 P0.3).
 - [P1] Make institutional liquid capital effectively unconstrained (plan §17); code caps bids at cash/(1-ltv).
 
 ## §19 — Parameterisation 
