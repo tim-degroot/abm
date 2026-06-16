@@ -32,6 +32,11 @@ class RentalTransaction:
 class BaseMarket:
     """
     Vickrey auction for a single step.
+    Usage:
+        market = BaseMarket(step)
+        market.list_property(pid, owner_id, reservation)
+        market.submit_bid(pid, bidder_id, amount, ...)
+        txns = market.clear()
     """
 
     def __init__(self, step: int):
@@ -39,6 +44,7 @@ class BaseMarket:
         self._listings: dict = {}
 
     def list_property(self, property_id: int, owner_id: int, reservation: float) -> None:
+        """Register a property with a minimum reservation price."""
         self._listings[property_id] = {
             "owner_id": owner_id,
             "reservation": reservation,
@@ -53,6 +59,7 @@ class BaseMarket:
         bidder_type: str | None = None,
         origination_ltv: float | None = None,
     ) -> None:
+        """Record a bid. Silently dropped if amount <= 0 or property unknown."""
         if property_id not in self._listings or amount <= 0:
             return
         self._listings[property_id]["bids"].append(
@@ -65,6 +72,7 @@ class BaseMarket:
         )
 
     def clear(self) -> list:
+        """Settle all auctions."""
         transactions = []
         for property_id, listing in self._listings.items():
             reservation = listing["reservation"]
@@ -86,6 +94,10 @@ class BaseMarket:
             transactions.append(self._create_transaction(property_id, listing, top_bid, price))
 
         return transactions
+
+    def _create_transaction(self, property_id: int, listing: dict, top_bid: dict, price: float):
+        """Override in subclass to return the correct record type."""
+        raise NotImplementedError
 
 
 class OwnershipMarket(BaseMarket):
