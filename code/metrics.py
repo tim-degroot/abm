@@ -1,7 +1,4 @@
-"""Data-collector reporters passed to Mesa's DataCollector.
-
-All functions take the model as their argument.
-"""
+"""Data-collector reporters passed to Mesa's DataCollector."""
 
 import numpy as np
 from agents import HouseholdAgent, InstitutionalAgent
