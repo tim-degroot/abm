@@ -1,72 +1,36 @@
 """
-HousingModel — main simulation class.
+Main simulation class.
 
-Orchestrates the minimum economic loop each step:
-
+Orchestrates initalisation and the economic loop each step:
   income_evolution
   → expectations
-  → valuation (via valuation module)
-  → action selection (logit, agents)
-  → property selection (logit, agents)
-  → bidding (WTP, agents)
-  → auction (Vickrey, market layer)
+  → valuation
+  → action selection
+  → property selection
+  → bidding
+  → auction
   → ownership/rental transfers + balance-sheet updates
   → mortgage servicing
   → mark-to-market asset revaluation
   → expectation update
-
-Spatial structure:
-  Z = grid_rows x grid_cols zones on a 2D TOROIDAL grid (config [spatial]).
-  Each agent's consideration set = its own zone + the 4 von Neumann neighbours
-  (up/down/left/right), wrapping around the torus edges, so every agent faces a
-  symmetric 5-zone search space with no edge effects. Properties are distributed
-   as evenly as possible across zones. (See config [spatial] for why the
-   default is a 4x4 torus rather than plan.md's nominal Z=10.)
-
-Initialisation (plan.md §17-18 — balance sheets DERIVED from allocations so the
-accounting identity HousingAssets = HousingEquity + MortgageDebt holds by
-construction):
-  1. Generate housing stock; quality q_k = mu_z + nu_k, standardised; price
-     anchor = base_price + price_sensitivity * q_k (base_price is a CALIBRATED
-     market anchor, not arbitrary).
-  2. Draw households: income (log-normal), TOTAL WEALTH (multiple of income),
-     risk aversion (log-normal).
-  3. Match income-ranked households to quality-ranked properties (richer get
-     better). Draw an origination LTV per owner (capped at credit.ltv_limit).
-     Derive: deposit = (1-LTV)*price = equity; mortgage = LTV*price;
-     liquid cash = wealth - deposit.
-  4. ownership_mode = "emergent" (default): a household owns only if it can
-     afford the deposit AND meets the income (DTI) test; otherwise it becomes a
-     renter, so the ownership rate EMERGES. ownership_mode = "target"
-     (DIAGNOSTIC): force target_ownership_rate by making the wealthiest
-     households owners, topping up cash if short so sheets stay feasible.
-  5. Private landlords at t=0: a share of owners receive extra (let-out)
-     properties with right-skewed portfolio sizes (plan §17).
-  6. Institutions allocated a separate tranche of properties as rental stock.
-  7. Remaining renters placed into available rental stock.
-  8. Seed price and rent history from initial allocations.
 """
 
-import numpy as np
 import mesa
+import numpy as np
 from mesa.datacollection import DataCollector
 from mesa.discrete_space import OrthogonalVonNeumannGrid
 
 from config import Config
+from policies import NoPolicy
 from properties import Property
-from agents import HouseholdAgent, InstitutionalAgent
 from credit import CreditEnvironment
 from markets import OwnershipMarket, RentalMarket
-from policies import NoPolicy
-from expectations import price_growth_signal, rent_growth_signal
-from valuation import estimate_market_rent
+from agents import HouseholdAgent, InstitutionalAgent
 from metrics import MODEL_REPORTERS
 
 
 class HousingModel(mesa.Model):
     """
-    Minimal research-grade housing market ABM.
-
     Parameters
     ----------
     config : Config, optional
