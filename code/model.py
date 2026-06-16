@@ -702,8 +702,7 @@ class HousingModel(mesa.Model):
             if not hasattr(agent, "mortgage_payment_due"):
                 continue
 
-            shortfall = agent.mortgage_payment_due() - agent.cash
-            if shortfall <= 0:
+            if (agent.mortgage_payment_due() - agent.cash) <= 0:
                 continue
 
             selected = []
