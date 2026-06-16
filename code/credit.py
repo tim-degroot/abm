@@ -2,13 +2,14 @@ from config import CreditConfig
 
 
 class CreditEnvironment:
-    def __init__(self):
-        self.mortgage_rate = CreditConfig().mortgage_rate
-        self.ltv_limit = CreditConfig().ltv_limit
-        self.dti_limit = CreditConfig().dti_limit
-        self.loan_term_months = CreditConfig().loan_term_months
-        self.inst_funding_rate = CreditConfig().inst_funding_rate
-        self.inst_ltv = CreditConfig().inst_ltv
+    def __init__(self, **kwargs):
+        cfg = CreditConfig()
+        self.mortgage_rate = kwargs.get("mortgage_rate", cfg.mortgage_rate)
+        self.ltv_limit = kwargs.get("ltv_limit", cfg.ltv_limit)
+        self.dti_limit = kwargs.get("dti_limit", cfg.dti_limit)
+        self.loan_term_months = kwargs.get("loan_term_months", cfg.loan_term_months)
+        self.inst_funding_rate = kwargs.get("inst_funding_rate", cfg.inst_funding_rate)
+        self.inst_ltv = kwargs.get("inst_ltv", cfg.inst_ltv)
 
     def _update(self):
         self.__init__()  # re-read config values in case they have changed
