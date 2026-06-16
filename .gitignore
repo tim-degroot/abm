@@ -221,5 +221,9 @@ __marimo__/
 .streamlit/secrets.toml
 .DS_Store
 
+# Generated outputs
+*.png
+results/
+
 # Personal notes (local only, not for remote)
 come-funziona-il-modello.md
