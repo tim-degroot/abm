@@ -42,7 +42,6 @@ from valuation import (
     investor_wtp,
     household_max_rent,
     estimate_market_rent,
-    expected_capital_gain,
 )
 
 

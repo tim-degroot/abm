@@ -129,6 +129,52 @@ def vacancy_rate(model):
     return vacant / total
 
 
+def collect_zone_metrics(model) -> list[dict]:
+    rows = []
+    for zone in range(model.n_zones):
+        props = [p for p in model.properties if p.zone == zone]
+        if not props:
+            continue
+        avg_est_val = float(sum(p.estimated_value for p in props) / len(props))
+        ownership_rate_val = float(
+            sum(1 for p in props if p.owner_id is not None) / len(props)
+        )
+        owned = [p for p in props if p.owner_id is not None]
+        inst_share = (
+            float(
+                sum(
+                    1
+                    for p in owned
+                    if isinstance(model._agent_map.get(p.owner_id), InstitutionalAgent)
+                )
+                / len(owned)
+            )
+            if owned
+            else 0.0
+        )
+        txns = [
+            t
+            for t in model.this_step_transactions
+            if model._property_map[t.property_id].zone == zone
+        ]
+        txn_vol = len(txns)
+        avg_txn_price = (
+            float(sum(t.price for t in txns) / len(txns)) if txns else float("nan")
+        )
+        rows.append(
+            {
+                "step": int(model.steps),
+                "zone": zone,
+                "avg_estimated_value": avg_est_val,
+                "ownership_rate": ownership_rate_val,
+                "institutional_ownership_share": inst_share,
+                "transaction_volume": txn_vol,
+                "avg_transaction_price": avg_txn_price,
+            }
+        )
+    return rows
+
+
 MODEL_REPORTERS = {
     "avg_sale_price": avg_sale_price,
     "transaction_volume": transaction_volume,
