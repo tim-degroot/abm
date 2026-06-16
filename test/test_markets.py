@@ -10,12 +10,12 @@ from markets import OwnershipMarket, RentalMarket, Transaction, RentalTransactio
 class TestMarketEmpty(unittest.TestCase):
     def test_clear_returns_empty_list_when_nothing_listed(self):
         market = OwnershipMarket(step=0)
-        self.assertEqual(market.clear(), [])
+        self.assertEqual(market.resolve(), [])
 
     def test_clear_returns_empty_list_when_no_bids(self):
         market = OwnershipMarket(step=0)
         market.list_property(property_id=1, owner_id=10, reservation=0)
-        self.assertEqual(market.clear(), [])
+        self.assertEqual(market.resolve(), [])
 
 
 class TestOwnershipMarketSingleBidder(unittest.TestCase):
@@ -23,7 +23,7 @@ class TestOwnershipMarketSingleBidder(unittest.TestCase):
         market = OwnershipMarket(step=1)
         market.list_property(property_id=1, owner_id=10, reservation=50_000)
         market.submit_bid(property_id=1, bidder_id=20, amount=100_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].price, 100_000)
 
@@ -31,7 +31,7 @@ class TestOwnershipMarketSingleBidder(unittest.TestCase):
         market = OwnershipMarket(step=1)
         market.list_property(property_id=1, owner_id=10, reservation=75_000)
         market.submit_bid(property_id=1, bidder_id=20, amount=100_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].price, 100_000)
 
@@ -42,7 +42,7 @@ class TestOwnershipMarketVickreyPricing(unittest.TestCase):
         market.list_property(property_id=1, owner_id=10, reservation=0)
         market.submit_bid(property_id=1, bidder_id=20, amount=200_000)
         market.submit_bid(property_id=1, bidder_id=21, amount=150_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].price, 150_000)
 
@@ -51,7 +51,7 @@ class TestOwnershipMarketVickreyPricing(unittest.TestCase):
         market.list_property(property_id=1, owner_id=10, reservation=180_000)
         market.submit_bid(property_id=1, bidder_id=20, amount=200_000)
         market.submit_bid(property_id=1, bidder_id=21, amount=100_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].price, 180_000)
 
@@ -59,7 +59,7 @@ class TestOwnershipMarketVickreyPricing(unittest.TestCase):
         market = OwnershipMarket(step=1)
         market.list_property(property_id=1, owner_id=10, reservation=0)
         market.submit_bid(property_id=1, bidder_id=20, amount=90_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].price, 90_000)
 
@@ -69,13 +69,13 @@ class TestBaseMarketReservation(unittest.TestCase):
         market = OwnershipMarket(step=1)
         market.list_property(property_id=1, owner_id=10, reservation=100_000)
         market.submit_bid(property_id=1, bidder_id=20, amount=50_000)
-        self.assertEqual(market.clear(), [])
+        self.assertEqual(market.resolve(), [])
 
     def test_bid_equal_to_reservation_succeeds(self):
         market = OwnershipMarket(step=1)
         market.list_property(property_id=1, owner_id=10, reservation=100_000)
         market.submit_bid(property_id=1, bidder_id=20, amount=100_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].price, 100_000)
 
@@ -85,20 +85,20 @@ class TestBaseMarketBidFiltering(unittest.TestCase):
         market = OwnershipMarket(step=1)
         market.list_property(property_id=1, owner_id=10, reservation=0)
         market.submit_bid(property_id=1, bidder_id=20, amount=0)
-        self.assertEqual(market.clear(), [])
+        self.assertEqual(market.resolve(), [])
 
     def test_negative_bid_silently_dropped(self):
         market = OwnershipMarket(step=1)
         market.list_property(property_id=1, owner_id=10, reservation=0)
         market.submit_bid(property_id=1, bidder_id=20, amount=-100)
-        self.assertEqual(market.clear(), [])
+        self.assertEqual(market.resolve(), [])
 
     def test_bid_on_unlisted_property_dropped(self):
         market = OwnershipMarket(step=1)
         market.list_property(property_id=1, owner_id=10, reservation=0)
         market.submit_bid(property_id=99, bidder_id=20, amount=100_000)
         market.submit_bid(property_id=1, bidder_id=21, amount=50_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].buyer_id, 21)
 
@@ -108,7 +108,7 @@ class TestBaseMarketBidFiltering(unittest.TestCase):
         market.submit_bid(property_id=1, bidder_id=20, amount=0)
         market.submit_bid(property_id=1, bidder_id=21, amount=80_000)
         market.submit_bid(property_id=1, bidder_id=22, amount=-1)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].buyer_id, 21)
         self.assertEqual(txns[0].price, 80_000)
@@ -122,7 +122,7 @@ class TestOwnershipMarket(unittest.TestCase):
             property_id=1, bidder_id=20, amount=100_000,
             bidder_type="household", origination_ltv=0.8,
         )
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         txn = txns[0]
         self.assertIsInstance(txn, Transaction)
@@ -141,7 +141,7 @@ class TestRentalMarket(unittest.TestCase):
         market = RentalMarket(step=3)
         market.list_property(property_id=1, owner_id=10, reservation=0)
         market.submit_bid(property_id=1, bidder_id=20, amount=1_500)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         txn = txns[0]
         self.assertIsInstance(txn, RentalTransaction)
@@ -157,7 +157,7 @@ class TestRentalMarket(unittest.TestCase):
         market.list_property(property_id=2, owner_id=11, reservation=0)
         market.submit_bid(property_id=1, bidder_id=20, amount=2_000)
         market.submit_bid(property_id=2, bidder_id=20, amount=1_500)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].property_id, 1)
         self.assertEqual(txns[0].tenant_id, 20)
@@ -169,7 +169,7 @@ class TestRentalMarket(unittest.TestCase):
         market.list_property(property_id=2, owner_id=11, reservation=0)
         market.submit_bid(property_id=1, bidder_id=20, amount=1_000)
         market.submit_bid(property_id=2, bidder_id=20, amount=2_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 1)
         self.assertEqual(txns[0].property_id, 2)
         self.assertEqual(txns[0].monthly_rent, 2_000)
@@ -180,7 +180,7 @@ class TestRentalMarket(unittest.TestCase):
         market.list_property(property_id=2, owner_id=11, reservation=0)
         market.submit_bid(property_id=1, bidder_id=20, amount=2_000)
         market.submit_bid(property_id=2, bidder_id=21, amount=1_500)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 2)
 
     def test_tenant_dedup_respects_sort_order(self):
@@ -191,7 +191,7 @@ class TestRentalMarket(unittest.TestCase):
         market.submit_bid(property_id=1, bidder_id=20, amount=1_000)
         market.submit_bid(property_id=2, bidder_id=20, amount=3_000)
         market.submit_bid(property_id=3, bidder_id=21, amount=2_000)
-        txns = market.clear()
+        txns = market.resolve()
         self.assertEqual(len(txns), 2)
         tenant_ids = {t.tenant_id for t in txns}
         self.assertEqual(tenant_ids, {20, 21})

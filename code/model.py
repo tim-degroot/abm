@@ -753,8 +753,8 @@ class HousingModel(mesa.Model):
         self._submit_bids(ownership_market, rental_market, avg_rent, actions, distress_sales)
 
         # 5 & 6. Market clearing
-        sale_txns = ownership_market.clear()
-        rental_txns = rental_market.clear()
+        sale_txns = ownership_market.resolve()
+        rental_txns = rental_market.resolve()
 
         # 7. Apply transactions
         self._apply_ownership_transactions(sale_txns)

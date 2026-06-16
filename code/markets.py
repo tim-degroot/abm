@@ -36,7 +36,7 @@ class BaseMarket:
         market = BaseMarket(step)
         market.list_property(pid, owner_id, reservation)
         market.submit_bid(pid, bidder_id, amount, ...)
-        txns = market.clear()
+        txns = market.resolve()
     """
 
     def __init__(self, step: int):
@@ -71,7 +71,7 @@ class BaseMarket:
             }
         )
 
-    def clear(self) -> list:
+    def resolve(self) -> list:
         """Settle all auctions."""
         transactions = []
         for property_id, listing in self._listings.items():
@@ -133,9 +133,9 @@ class RentalMarket(BaseMarket):
             winning_rent_bid=top_bid["amount"],
         )
 
-    def clear(self):
+    def resolve(self):
         """Settle auctions, then keep only each tenant's highest-rent win."""
-        transactions = super().clear()
+        transactions = super().resolve()
         winners = []
         winning_tenants = set()
         for txn in sorted(transactions, key=lambda t: (-t.winning_rent_bid, t.property_id)):
