@@ -1,5 +1,19 @@
 # TODO_new — Gap list to realize NewPlan.md
 
+
+compute bid is ignoring expectations and just using average rent
+quality not coming into the valuations or utility
+candidates should already be only listed houses
+representative utilities are totally wrong
+macro growht shocks
+wtf is record_bind
+check they can buy the property BEFORE and AFTER the bid
+property choice has to happen once everything is listed
+fire sale should stop when enough are siled
+if you sell a property someone lives in you have to kick them out!
+what is prop.estimated value 
+
+
 What is missing in the code to match NewPlan.md. Grouped by plan section.
 Priority tags: [P0] blocking core claims · [P1] important · [P2] polish.
 

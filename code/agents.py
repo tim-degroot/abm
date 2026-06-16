@@ -603,7 +603,7 @@ class InstitutionalAgent(mesa.Agent):
         model,
         cash,
         funding_rate,
-        home_zone,
+        home_zone,  # remove
         expected_price_growth=None,
         expected_rent_growth=None,
     ):
@@ -656,7 +656,7 @@ class InstitutionalAgent(mesa.Agent):
     # Stage 1: Action selection
     # ------------------------------------------------------------------
 
-    def choose_action(self, purchase_candidates, avg_rent):
+    def choose_action(self, purchase_candidates, avg_rent):  # COMPLETELY WRONG!
         acfg = self.model.config.agent
         scores = []
 
@@ -736,7 +736,9 @@ class InstitutionalAgent(mesa.Agent):
 
         self.cash += sale_price - outstanding
         self._housing_asset_value = max(
-            0.0, self._housing_asset_value - prop.estimated_value
+            0.0,
+            self._housing_asset_value
+            - prop.estimated_value,  # why is this estimated? WHAT THE ???
         )
         self._mortgages.pop(prop.id, None)
 
@@ -777,7 +779,9 @@ class InstitutionalAgent(mesa.Agent):
     # Expectation update
     # ------------------------------------------------------------------
 
-    def update_expectations(self, price_signal, rent_signal, delta=None):
+    def update_expectations(
+        self, price_signal, rent_signal, delta=None
+    ):  # Needs update for current isnglas
         d = delta if delta is not None else self.model.config.expectations.delta
         noise_sd = self.model.config.expectations.noise_sd
         self.expected_price_growth = adaptive_update(
@@ -786,7 +790,7 @@ class InstitutionalAgent(mesa.Agent):
         self.expected_rent_growth = adaptive_update(
             self.expected_rent_growth, rent_signal, d
         )
-        if noise_sd > 0.0:
+        if noise_sd > 0.0:  # what is this?
             self.expected_price_growth += float(self.model.rng.normal(0.0, noise_sd))
             self.expected_rent_growth += float(self.model.rng.normal(0.0, noise_sd))
 
@@ -798,13 +802,13 @@ class InstitutionalAgent(mesa.Agent):
         cfg = self.model.config
         # Use market-average price for expected capital gains (see household
         # comment above) to avoid property-specific positive feedback loops.
-        market_price = (
+        market_price = (  # why is this relevant ?
             self.model._price_history[-1]
             if self.model._price_history
             else prop.estimated_value
         )
         # Same configured capital-gain treatment as households (see helper):
-        # "fixed_level" or rent-sourced "bounded_growth" to break the price loop.
+        # "fixed_level" or rent-sourced "bounded_growth" to break the price loop - what is this ! No !
         capital_gain = expected_capital_gain(
             cfg.valuation.capital_gain_mode,
             market_price,
@@ -815,11 +819,12 @@ class InstitutionalAgent(mesa.Agent):
         )
         gross_monthly_rent = estimate_market_rent(
             prop.quality, avg_rent, cfg.valuation.quality_sensitivity
-        )
-        net_rent = gross_monthly_rent * (1.0 - cfg.valuation.operating_cost_fraction)
+        )  # should come from expectations
+        net_rent = gross_monthly_rent * (
+            1.0 - cfg.valuation.operating_cost_fraction
+        )  # IGNORE OPERATING COST FRACTION
         # Discount expected capital gains using funding_rate PLUS an
-        # institutional required return (risk premium) so low funding costs do
-        # not by themselves generate implausibly large WTPs.
+        # institutional required return (risk premium) so low funding
         effective_rate = float(self.funding_rate + cfg.agent.inst_required_return)
         wtp, bound = investor_wtp(
             net_rent,
