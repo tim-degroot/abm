@@ -1,9 +1,11 @@
+"""Vickrey (second-price sealed-bid) auction markets for ownership and rentals."""
+
 from dataclasses import dataclass
 
 
 @dataclass
 class Transaction:
-    """Records a completed ownership transfer."""
+    """Completed ownership transfer."""
 
     step: int
     property_id: int
@@ -17,7 +19,7 @@ class Transaction:
 
 @dataclass
 class RentalTransaction:
-    """Records a completed rental agreement."""
+    """Completed rental agreement."""
 
     step: int
     property_id: int
@@ -29,27 +31,35 @@ class RentalTransaction:
 
 class BaseMarket:
     """
-    Core Vickrey (second-price sealed-bid) auction logic.
-    
-    Usage each step:
-    market = BaseMarket(step)
-    market.list_property(property_id, owner_id, reservation)
-    market.submit_bid(property_id, bidder_id, amount, bidder_type, origination_ltv)
-    transactions = market.clear()
+    Vickrey auction for a single step.
+    Usage:
+        market = BaseMarket(step)
+        market.list_property(pid, owner_id, reservation)
+        market.submit_bid(pid, bidder_id, amount, ...)
+        txns = market.clear()
     """
 
-    def __init__(self, step):
+    def __init__(self, step: int):
         self.step = step
-        self._listings = {}
+        self._listings: dict = {}
 
-    def list_property(self, property_id, owner_id, reservation):
+    def list_property(self, property_id: int, owner_id: int, reservation: float) -> None:
+        """Register a property with a minimum reservation price."""
         self._listings[property_id] = {
             "owner_id": owner_id,
             "reservation": reservation,
             "bids": [],
         }
 
-    def submit_bid(self, property_id, bidder_id, amount, bidder_type=None, origination_ltv=None):
+    def submit_bid(
+        self,
+        property_id: int,
+        bidder_id: int,
+        amount: float,
+        bidder_type: str | None = None,
+        origination_ltv: float | None = None,
+    ) -> None:
+        """Record a bid. Silently dropped if amount <= 0 or property unknown."""
         if property_id not in self._listings or amount <= 0:
             return
         self._listings[property_id]["bids"].append(
@@ -61,30 +71,45 @@ class BaseMarket:
             }
         )
 
-    def clear(self):
+    def clear(self) -> list:
+        """
+        Settle all auctions.
+
+        For each property: highest bidder wins, pays max(second-highest, reservation).
+        """
         transactions = []
         for property_id, listing in self._listings.items():
             reservation = listing["reservation"]
             bids = listing["bids"]
             if not bids:
                 continue
+
             sorted_bids = sorted(bids, key=lambda b: b["amount"], reverse=True)
             top_bid = sorted_bids[0]
+
             if top_bid["amount"] <= 0 or top_bid["amount"] < reservation:
                 continue
+
             if len(sorted_bids) >= 2:
                 price = max(sorted_bids[1]["amount"], reservation)
             else:
                 price = max(top_bid["amount"], reservation)
+
             transactions.append(self._create_transaction(property_id, listing, top_bid, price))
+
         return transactions
 
-    def _create_transaction(self, property_id, listing, top_bid, price):
+    def _create_transaction(self, property_id: int, listing: dict, top_bid: dict, price: float):
+        """Override in subclass to return the correct record type."""
         raise NotImplementedError
 
 
 class OwnershipMarket(BaseMarket):
-    def _create_transaction(self, property_id, listing, top_bid, price):
+    """Vickrey auction producing Transaction records for ownership."""
+
+    def _create_transaction(
+        self, property_id: int, listing: dict, top_bid: dict, price: float
+    ) -> Transaction:
         return Transaction(
             step=self.step,
             property_id=property_id,
@@ -98,7 +123,11 @@ class OwnershipMarket(BaseMarket):
 
 
 class RentalMarket(BaseMarket):
-    def _create_transaction(self, property_id, listing, top_bid, price):
+    """Vickrey auction producing RentalTransaction records, with tenant dedup."""
+
+    def _create_transaction(
+        self, property_id: int, listing: dict, top_bid: dict, price: float
+    ) -> RentalTransaction:
         return RentalTransaction(
             step=self.step,
             property_id=property_id,
@@ -109,6 +138,7 @@ class RentalMarket(BaseMarket):
         )
 
     def clear(self):
+        """Settle auctions, then keep only each tenant's highest-rent win."""
         transactions = super().clear()
         winners = []
         winning_tenants = set()
