@@ -36,7 +36,15 @@ Agent definitions.
 
 import numpy as np
 import mesa
-from expectations import adaptive_update, init_price_expectation, init_rent_expectation
+from expectations import (
+    adaptive_update,
+    init_price_expectation,
+    init_rent_expectation,
+    price_growth_signal,
+    rent_growth_signal,
+    institutional_price_forecast,
+    institutional_rent_growth_signal,
+)
 from valuation import (
     household_wtp,
     investor_wtp,
@@ -44,6 +52,7 @@ from valuation import (
     estimate_market_rent,
 )
 import utility
+from utility import household_action_value, institutional_action_value
 
 
 def _logit_probs(scores):  # We can remove it
@@ -205,7 +214,7 @@ class HouseholdAgent(mesa.Agent):
         affordable = [
             p
             for p in purchase_candidates
-            if credit.is_feasible(p.estimated_value, self.cash, self.income)
+            if credit.max_affordable_price(self.cash, self.income) >= p.estimated_value
         ]
         if affordable:
             best_wtp = max(
@@ -267,7 +276,8 @@ class HouseholdAgent(mesa.Agent):
 
     def compute_rent_bid(self):
         """Maximum monthly rent bid (affordability ceiling)."""
-        return household_max_rent(self.income)
+        ratio = self.model.config.valuation.max_rent_income_ratio
+        return household_max_rent(self.income, ratio)
 
     # ------------------------------------------------------------------
     # Balance sheet updates
@@ -444,8 +454,12 @@ class HouseholdAgent(mesa.Agent):
 
     def update_expectations(self, price_signal, rent_signal, delta=None):
         d = delta if delta is not None else self.model.config.expectations.delta
+        noise_sd = self.model.config.expectations.household_noise_sd
         self.expected_price_growth = adaptive_update(self.expected_price_growth, price_signal, d)
         self.expected_rent_growth = adaptive_update(self.expected_rent_growth, rent_signal, d)
+        if noise_sd > 0.0:
+            self.expected_price_growth += float(self.model.rng.normal(0.0, noise_sd))
+            self.expected_rent_growth += float(self.model.rng.normal(0.0, noise_sd))
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -453,67 +467,49 @@ class HouseholdAgent(mesa.Agent):
 
     def _wtp_for_property(self, prop, avg_market_rent, credit):
         cfg = self.model.config
-        # Exogenous expected capital gain (£) - EXPECTATIONS
-        # Use the market-level recent average price as the base for expected - EXPECTATIONS
-        # capital gains rather than the per-property `estimated_value` to avoid
-        # positive feedback where a single high transaction inflates one
-        # property's value and hence everyone's WTP for it. - WHAT THE HELL IS THIS
-        market_price = (
-            self.model._price_history[-1] if self.model._price_history else prop.estimated_value
-        )
-        # Expected capital gain via the configured mode, which breaks the
-        # realised-price -> WTP -> realised-price feedback loop. In
-        # "bounded_growth" mode the growth rate is sourced from the agent's
-        # rent-growth expectation (income-driven), not the price EMA. - WEIRD hack REMOVE
         monthly_rent = estimate_market_rent(
             prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
         )
+        reference_price = (
+            self.model._price_history[-1] if self.model._price_history else prop.estimated_value
+        )
+        capital_gain = self.expected_price_growth * reference_price
+
         if self.is_owner_occupier:
-            # Already housed → an extra purchase is buy-to-let (landlord, plan §11).
             net_rent = monthly_rent
-            wtp, bound = investor_wtp(
+            wtp = investor_wtp(
                 net_rent,
+                capital_gain,
                 cfg.credit.btl_funding_rate,
                 cfg.credit.btl_ltv,
-                expected_monthly_rent=monthly_rent,
             )
-            # Private landlords are still credit-constrained
             wtp = min(wtp, credit.max_affordable_price(self.cash, self.income))
             return wtp
 
-        # Owner-occupier purchase: value = quality consumption + capital gain.
-        quality_value = (
-            cfg.valuation.quality_value_scale * monthly_rent
-        )  # WHY IS THIS RENT SCALING IT SHOULD SCALE QUALITY?
+        quality_value = cfg.valuation.quality_value_scale * prop.quality
 
-        # Outside option: value of the best available rental alternative in the
-        # agent's searchable zones (monthly). If none available, fall back to
-        # the current average market rent.
-        zones = self.model.get_search_zones(self.home_zone)
+        zones = self.model.get_household_search_zones(self.home_zone)
         rental_props = [
             p for p in self.model.properties if p.zone in zones and p.id != self.home_property
         ]
         best_monthly_rent = 0.0
         for rp in rental_props:
             mr = estimate_market_rent(
-                rp.quality, avg_market_rent, cfg.valuation.quality_sensitivity  # WHY?
+                rp.quality, avg_market_rent, cfg.valuation.quality_sensitivity
             )
             if mr > best_monthly_rent:
                 best_monthly_rent = mr
-
         if best_monthly_rent <= 0.0:
             best_monthly_rent = avg_market_rent
-
         outside_option = best_monthly_rent
 
-        wtp, bound = household_wtp(
+        wtp = household_wtp(
             quality_value,
             capital_gain,
             outside_option,
             credit.mortgage_rate,
             credit.ltv_limit,
             credit.max_affordable_price(self.cash, self.income),
-            income=self.income,
         )
         return wtp
 
@@ -537,10 +533,11 @@ class InstitutionalAgent(mesa.Agent):
 
     def __init__(
         self,
-        # unique_id,
+        unique_id,
         model,
         cash,
         funding_rate,
+        home_zone=None,
         expected_price_growth=None,
         expected_rent_growth=None,
     ):
@@ -548,8 +545,22 @@ class InstitutionalAgent(mesa.Agent):
 
         self.cash = cash
         self.funding_rate = funding_rate
+        self.home_zone = home_zone if home_zone is not None else 0
+
         self.portfolio = set()
         self._mortgages = {}
+
+        ecfg = self.model.config.expectations
+        self.expected_price_growth = (
+            expected_price_growth
+            if expected_price_growth is not None
+            else init_price_expectation(ecfg.init_price_growth)
+        )
+        self.expected_rent_growth = (
+            expected_rent_growth
+            if expected_rent_growth is not None
+            else init_rent_expectation(ecfg.init_rent_growth)
+        )
 
         self._housing_asset_value = 0.0
 
@@ -579,7 +590,7 @@ class InstitutionalAgent(mesa.Agent):
     # Stage 1: Action selection
     # ------------------------------------------------------------------
 
-    def choose_action(self, purchase_candidates):
+    def choose_action(self, purchase_candidates, avg_rent=None):
         ltv = self.model.credit.inst_ltv
         owned = [self.model._property_map[pid] for pid in self.portfolio]
         feasible = [p for p in purchase_candidates
@@ -653,10 +664,7 @@ class InstitutionalAgent(mesa.Agent):
 
     def release_property(self, prop, sale_price):
         if prop.id not in self.portfolio:
-            error_msg = (
-                f"Institution {self.unique_id} cannot sell property {prop.id} it does not own."
-            )
-            raise RuntimeError(error_msg)
+            return
 
         self.portfolio.discard(prop.id)
         if prop.id in self._mortgages:
@@ -668,7 +676,7 @@ class InstitutionalAgent(mesa.Agent):
         self.cash += sale_price - outstanding
         self._housing_asset_value = max(
             0.0,
-            self._housing_asset_value - prop.estimated_value,  # why is this estimated? WHAT THE ???
+            self._housing_asset_value - prop.estimated_value,
         )
         self._mortgages.pop(prop.id, None)
 
@@ -710,9 +718,27 @@ class InstitutionalAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def update_expectations(self, price_signal, rent_signal, delta=None):
-        d = delta if delta is not None else self.model.config.expectations.delta
-        self.expected_price_growth = adaptive_update(self.expected_price_growth, price_signal, d)
-        self.expected_rent_growth = adaptive_update(self.expected_rent_growth, rent_signal, d)
+        cfg = self.model.config.expectations
+        state_history = getattr(self.model, "_state_history", None)
+        if state_history is not None and len(state_history) >= cfg.inst_forecast_window + 1:
+            predicted_change = institutional_price_forecast(
+                state_history, cfg.inst_forecast_window
+            )
+            current_price = state_history[-1].get("price", 1.0)
+            self.expected_price_growth = predicted_change / max(current_price, 1e-9)
+            self.expected_rent_growth = institutional_rent_growth_signal(state_history)
+        else:
+            d = delta if delta is not None else cfg.delta
+            self.expected_price_growth = adaptive_update(
+                self.expected_price_growth, price_signal, d
+            )
+            self.expected_rent_growth = adaptive_update(
+                self.expected_rent_growth, rent_signal, d
+            )
+
+        if cfg.inst_noise_sd > 0.0:
+            self.expected_price_growth += float(self.model.rng.normal(0.0, cfg.inst_noise_sd))
+            self.expected_rent_growth += float(self.model.rng.normal(0.0, cfg.inst_noise_sd))
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -720,22 +746,23 @@ class InstitutionalAgent(mesa.Agent):
 
     def _wtp_for_property(self, prop, avg_rent):
         cfg = self.model.config
-        ltv = cfg.agent.inst_ltv
-        net_rent = estimate_market_rent(prop.quality, avg_rent, cfg.valuation.quality_sensitivity)
-        # Funding rate plus an institutional required return (risk premium).
-        effective_rate = self.funding_rate + cfg.agent.inst_required_return
-        # Cash-leverage ceiling: max price = cash / (1 - ltv).
-        credit_ceiling = self.cash / max(1e-9, 1.0 - ltv) if ltv < 1.0 else None
-        wtp, bound = investor_wtp(
+        reference_price = (
+            self.model._price_history[-1] if self.model._price_history else prop.estimated_value
+        )
+        capital_gain = self.expected_price_growth * reference_price
+
+        gross_monthly_rent = estimate_market_rent(
+            prop.quality, avg_rent, cfg.valuation.quality_sensitivity
+        )
+        net_rent = gross_monthly_rent
+        effective_rate = float(self.funding_rate + cfg.agent.inst_required_return)
+
+        wtp = investor_wtp(
             net_rent,
-            self.expected_price_growth,  # E[Δp]
+            capital_gain,
             effective_rate,
             cfg.agent.inst_ltv,
-            expected_monthly_rent=gross_monthly_rent,
         )
-        # Prevent unbounded institutional bids by capping at a cash-derived
-        # affordability ceiling: assume institutions can leverage up to
-        # `inst_ltv` on purchases so max_price = cash / (1 - inst_ltv).
         inst_ltv = cfg.agent.inst_ltv
         if inst_ltv < 1.0:
             max_price = self.cash / max(1e-9, (1.0 - inst_ltv))

@@ -27,6 +27,7 @@ from properties import Property
 from credit import CreditEnvironment
 from markets import OwnershipMarket, RentalMarket
 from agents import HouseholdAgent, InstitutionalAgent
+from expectations import price_growth_signal, rent_growth_signal
 from metrics import MODEL_REPORTERS
 
 
@@ -61,13 +62,14 @@ class HousingModel(mesa.Model):
         self.policy = policy if policy is not None else NoPolicy()
 
         # Set credit environment
-        self.credit = cfg.credit
+        self.credit = CreditEnvironment(**cfg.credit.model_dump())
 
         # Create agents and initial state
         self._init_agents(cfg.sim.n_households, cfg.sim.n_institutions)
         self._agent_map = {a.unique_id: a for a in self.agents}
         self._init_ownership_and_rent()
         self._seed_history()
+        self._avg_rent = self._estimate_initial_rent()
         self.current_macro_state = getattr(self.config.macro, "initial_state", "Neutral")
 
         # Per-step registers
@@ -91,6 +93,9 @@ class HousingModel(mesa.Model):
         # Transaction history
         self.all_transactions = []
         self.all_rental_transactions = []
+
+        # Market state history for institutional price forecasts
+        self._state_history: list[dict] = []
 
         self.datacollector = DataCollector(model_reporters=MODEL_REPORTERS)
         self.datacollector.collect(self)
@@ -290,13 +295,13 @@ class HousingModel(mesa.Model):
             float(self.rng.uniform(ai.ltv_dist_low, ai.ltv_dist_high)),
         )
 
-    def _assign_property_to_household(self, hh, prop, is_home, r):
+    def _assign_property_to_household(self, hh, prop, is_home):
         price = prop.estimated_value
         ltv = self._draw_origination_ltv()
         deposit = price * (1.0 - ltv)
 
         # Feasibility
-        payment = self.credit.monthly_mortgage_payment(price, ltv, r)
+        payment = self.credit.monthly_mortgage_payment(price, ltv)
         income_ok = payment <= self.credit.dti_limit * hh.income
         if not income_ok:
             return False
@@ -411,12 +416,14 @@ class HousingModel(mesa.Model):
             debt <= props_assets + tol
         ), f"Mortgage debt {debt:.2f} exceeds housing assets {props_assets:.2f}"
 
-    def _seed_price_history(self):
-        """Seed price history from initial property values."""
+    def _seed_history(self):
+        """Seed price and rent history from initial property values."""
         allocated = [p.purchase_anchor_price for p in self.properties if p.owner_id is not None]
         if allocated:
-            return [float(np.mean(allocated))]
-        return None
+            self._price_history = [float(np.mean(allocated))]
+        else:
+            self._price_history = []
+        self._rent_history = [self._estimate_initial_rent()]
 
     def _estimate_initial_rent(self):
         """Monthly rent proxy from the configured gross yield on median property price."""
@@ -623,6 +630,9 @@ class HousingModel(mesa.Model):
         touched.
         """
         mcfg = self.config.market
+        base_prob = mcfg.lease_expiry_prob
+        early_prob = mcfg.lease_early_exit_prob
+        min_m = mcfg.min_lease_months
 
         for prop in self.properties:
             # Active tenancy = someone occupies a property they do not own.
@@ -1381,28 +1391,46 @@ class HousingModel(mesa.Model):
     # ------------------------------------------------------------------
 
     def _update_expectations(self):
-        # Only update price/rent signals from the transaction sample if the
-        # sample has enough volume to be informative. Thin markets (1-2
-        # transactions) can create noisy spikes that destabilise expectations
-        # and WTPs; require at least `min_txns_for_signal` transactions.
         min_txns_for_signal = 3
 
         if self.this_step_transactions and len(self.this_step_transactions) >= min_txns_for_signal:
-            # Use median to reduce sensitivity to outliers in thin samples
             period_avg = float(np.median([t.price for t in self.this_step_transactions]))
         elif self._price_history:
             period_avg = self._price_history[-1]
         else:
             period_avg = None
-        self._price_history.append(period_avg)
+        if period_avg is not None:
+            self._price_history.append(period_avg)
 
         current_avg_rent = self._current_avg_rent()
         self._rent_history.append(current_avg_rent)
         self._avg_rent = current_avg_rent
 
+        # Append market state for institutional price forecasts
+        hh_agents = [a for a in self.agents if isinstance(a, HouseholdAgent)]
+        avg_ltv = (
+            sum(
+                ltv for _, ltv, _ in sum((list(a._mortgages.values()) for a in hh_agents), [])
+            )
+            / max(sum(len(a._mortgages) for a in hh_agents), 1)
+        )
+        inst_agents = [a for a in self.agents if isinstance(a, InstitutionalAgent)]
+        inst_share = sum(len(a.portfolio) for a in inst_agents) / max(len(self.properties), 1)
+
+        self._state_history.append({
+            "price": period_avg if period_avg is not None else (self._price_history[-1] if self._price_history else 0.0),
+            "rent": current_avg_rent,
+            "volume": len(self.this_step_transactions),
+            "macro": getattr(self, "current_macro_state", "Neutral"),
+            "avg_ltv": avg_ltv,
+            "inst_share": inst_share,
+        })
+
         window = self.config.expectations.signal_window
-        p_signal = price_growth_signal(self._price_history[-window:])
-        r_signal = rent_growth_signal(self._rent_history[-window:])
+        valid_prices = [p for p in self._price_history if p is not None and p > 0]
+        valid_rents = [r for r in self._rent_history if r is not None and r > 0]
+        p_signal = price_growth_signal(valid_prices[-window:]) if len(valid_prices) >= 2 else 0.0
+        r_signal = rent_growth_signal(valid_rents[-window:]) if len(valid_rents) >= 2 else 0.0
 
         for agent in self.agents:
             agent.update_expectations(p_signal, r_signal)

@@ -46,6 +46,7 @@ class AgentInitConfig(BaseModel):
     inst_cash_low: float = Field(5_000_000.0, ge=0)
     inst_cash_high: float = Field(20_000_000.0, ge=0)
     inst_required_return: float = Field(0.0025, ge=0)
+    inst_min_yield: float = Field(0.04, ge=0)
     loss_aversion: float = Field(1.30, ge=0)  ###
 
 
@@ -55,13 +56,17 @@ class CreditConfig(BaseModel):
     ltv_limit: float = Field(0.85, ge=0, le=1)
     dti_limit: float = Field(0.35, ge=0, le=1)
     loan_term_months: int = Field(360, gt=0)
+    btl_funding_rate: float = Field(0.005, ge=0)
+    btl_ltv: float = Field(0.75, ge=0, le=1)
     inst_funding_rate: float = Field(0.0045, ge=0)
     inst_ltv: float = Field(0.60, ge=0, le=1)
 
 
 class ValuationConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    quality_sensitivity: float = Field(0.3, ge=0)  ###
+    quality_sensitivity: float = Field(0.3, ge=0)
+    quality_value_scale: float = Field(1.0, ge=0)
+    max_rent_income_ratio: float = Field(0.35, ge=0, le=1)
 
 
 class ExpectationsConfig(BaseModel):
@@ -70,9 +75,25 @@ class ExpectationsConfig(BaseModel):
     init_rent_growth: float = 0.001667
     inst_noise_sd: float = Field(0.00072, ge=0)
     household_noise_sd: float = Field(0.00144, ge=0)
+    delta: float = Field(0.7, ge=0, le=1)
+    signal_window: int = Field(12, gt=0)
+    inst_forecast_window: int = Field(36, gt=0)
 
 
-class MacroConfig(BaseModel):  # Need to add credit conditions
+class MarketConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    initial_rent_yield: float = Field(0.045, ge=0)
+    min_lease_months: int = Field(12, ge=0)
+    lease_early_exit_prob: float = Field(0.0, ge=0, le=1)
+    lease_expiry_prob: float = Field(0.02, ge=0, le=1)
+    landlord_reservation_yield: float = Field(0.04, ge=0)
+    min_reservation_rent: float = Field(100.0, ge=0)
+    loss_aversion_owner: float = Field(1.3, ge=1)
+    loss_aversion_landlord: float = Field(1.1, ge=1)
+    estimated_value_smooth_alpha: float = Field(0.3, ge=0, le=1)
+
+
+class MacroConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     initial_state: Literal["Boom", "Neutral", "Recession"] = "Neutral"
     boom_mean: float = 0.0025
@@ -93,6 +114,7 @@ class Config(BaseModel):
     valuation: ValuationConfig = ValuationConfig()
     expectations: ExpectationsConfig = ExpectationsConfig()
     macro: MacroConfig = MacroConfig()
+    market: MarketConfig = MarketConfig()
 
 
 __all__ = [
@@ -104,5 +126,6 @@ __all__ = [
     "CreditConfig",
     "ValuationConfig",
     "ExpectationsConfig",
+    "MarketConfig",
     "MacroConfig",
 ]
