@@ -8,7 +8,6 @@ compute bid is ignoring expectations and just using average rent
 quality not coming into the valuations or utility
 candidates should already be only listed houses
 representative utilities are totally wrong
-wtf is record_bind
 check they can buy the property BEFORE and AFTER the bid
 property choice has to happen once everything is listed
 fire sale should stop when enough are siled

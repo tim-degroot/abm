@@ -14,18 +14,20 @@ class CreditEnvironment:
     def _update(self):
         self.__init__()  # re-read config values in case they have changed
 
-    def monthly_mortgage_payment(self, price):
+    def monthly_mortgage_payment(
+        self, price, r, n
+    ):  # r moved to param since either mortgage or inst rate depending on agent
         ltv = self.ltv_limit
         principal = ltv * price
-        r = self.mortgage_rate
         n = self.loan_term_months
         if r == 0:
             return principal / n
         return principal * r * (1 + r) ** n / ((1 + r) ** n - 1)
 
-    def outstanding_principal(self, original_price, ltv, months_elapsed):
+    def outstanding_principal(
+        self, original_price, ltv, months_elapsed, r
+    ):  # r moved to param since either mortgage or inst rate depending on agent
         P = original_price * ltv
-        r = self.mortgage_rate
         n = self.loan_term_months
         t = min(months_elapsed, n)
         if r == 0:

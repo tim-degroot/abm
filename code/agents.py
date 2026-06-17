@@ -262,7 +262,7 @@ class HouseholdAgent(mesa.Agent):
 
     def compute_bid(self, prop, avg_market_rent):
         """Truthful WTP bid for ownership."""
-        return self._wtp_for_property(prop, avg_market_rent, self.model.credit, record_bind=True)
+        return self._wtp_for_property(prop, avg_market_rent, self.model.credit)
 
     def compute_rent_bid(self):
         """Maximum monthly rent bid (affordability ceiling)."""
@@ -460,7 +460,7 @@ class HouseholdAgent(mesa.Agent):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _wtp_for_property(self, prop, avg_market_rent, credit, record_bind=False):
+    def _wtp_for_property(self, prop, avg_market_rent, credit):
         cfg = self.model.config
         # Exogenous expected capital gain (£) - EXPECTATIONS
         # Use the market-level recent average price as the base for expected - EXPECTATIONS
@@ -488,8 +488,6 @@ class HouseholdAgent(mesa.Agent):
             )
             # Private landlords are still credit-constrained
             wtp = min(wtp, credit.max_affordable_price(self.cash, self.income))
-            if record_bind:
-                self.model._record_ceiling_bind(bound)
             return wtp
 
         # Owner-occupier purchase: value = quality consumption + capital gain.
@@ -526,8 +524,6 @@ class HouseholdAgent(mesa.Agent):
             credit.max_affordable_price(self.cash, self.income),
             income=self.income,
         )
-        if record_bind:
-            self.model._record_ceiling_bind(bound)
         return wtp
 
     def step(self):
@@ -646,7 +642,7 @@ class InstitutionalAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def compute_bid(self, prop, avg_rent):
-        return self._wtp_for_property(prop, avg_rent, record_bind=True)
+        return self._wtp_for_property(prop, avg_rent)
 
     # ------------------------------------------------------------------
     # Balance sheet
@@ -740,7 +736,7 @@ class InstitutionalAgent(mesa.Agent):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _wtp_for_property(self, prop, avg_rent, record_bind=False):
+    def _wtp_for_property(self, prop, avg_rent):
         cfg = self.model.config
         # Use market-average price for expected capital gains (see household
         # comment above) to avoid property-specific positive feedback loops.
@@ -770,8 +766,6 @@ class InstitutionalAgent(mesa.Agent):
         if inst_ltv < 1.0:
             max_price = self.cash / max(1e-9, (1.0 - inst_ltv))
             wtp = min(wtp, max_price)
-        if record_bind:
-            self.model._record_ceiling_bind(bound)
         return wtp
 
     def step(self):
