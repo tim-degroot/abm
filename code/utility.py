@@ -1,80 +1,178 @@
 """
-Utility: the logit inputs, built from valuation.py's P&L.
+Utility: converts P&L into logit inputs.
 
-The flow: value V (money) → surplus ΔV = V − V_outside → U(ΔV) → logit.
+Flow per action: compute Π (P&L) → compute V (value) → compute ΔV (surplus over outside
+option) → apply U (risk curvature) → feed logit.
 
-  - value_*       raw monetary value of an outcome (§5, §6)
-  - crra          risk-aversion curvature U(ΔV) (§5, §8)
-  - delta_v_*     ΔV per action, the logit inputs (§10)
-  - logit_*       the choice mechanism; agent-agnostic (§10)
-
-This module imports valuation.py, never the reverse. Agents enter here (the
-value functions read agent state); they never enter valuation.py.
+Sections:
+  - P&L helpers     raw profit/loss per agent type
+  - Value V         monetary value of an outcome
+  - ΔV per action   surplus = V − V_outside, the logit input
+  - U(ΔV)           risk curvature (CRRA for households, identity for institutions)
+  - Logit           action and property selection mechanism
 """
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Hashable, Mapping, Sequence
-
-if TYPE_CHECKING:
-    from agents import HouseholdAgent, InstitutionalAgent
-    from properties import Property
-
-    Agent = HouseholdAgent | InstitutionalAgent
-
-
-@dataclass(frozen=True)
-class DecisionContext:
-    """The market snapshot one agent values all its actions against."""
-
-    avg_market_rent: float
-    purchase_candidates: Sequence["Property"]
-    rental_candidates: Sequence["Property"]
-
+from typing import Hashable, Mapping
 
 # ---------------------------------------------------------------------------
-# Value V (money)   (§5, §6)
+# P&L helpers  (internal — called by value and delta_v functions below)
 # ---------------------------------------------------------------------------
-# Value before risk curvature. ε (taste shock) is added once, in the
-# logit, never both (§30).
 
 
-def value_owner_occupier(quality_value: float, pnl: float) -> float:
-    """V^OO = q_k + Π_H. `pnl` from valuation.pnl_owner_occupier."""
+def _pnl_owner_occupier(
+    expected_capital_gain: float,
+    mortgage_rate: float,
+    ltv: float,
+    price: float,
+) -> float:
+    """Monthly P&L for an owner-occupier.
+    Gain from expected price growth minus monthly mortgage cost.
+    Π_H = E[Δp] − r_m·L·p, where r_m = mortgage rate, L = LTV ratio.
+    Imputed rent does not appear here because it is common to both owning and renting
+    and cancels in the surplus comparison."""
     ...
 
 
-def value_landlord(pnl: float) -> float:
-    """V^LL = Π_L. Quality enters only through rent."""
+def _pnl_landlord(
+    net_rent: float,
+    expected_capital_gain: float,
+    btl_rate: float,
+    ltv: float,
+    price: float,
+) -> float:
+    """Monthly P&L for a private landlord.
+    Rental income plus expected price growth minus mortgage cost.
+    Π_L = R − φ − r_f^BTL·L·p + E[Δp]"""
     ...
 
 
-def value_institution(expected_pnl: float) -> float:
-    """V^INST = E[Π_I]. Risk-neutral, so no curvature later (§8)."""
-    ...
-
-
-# Outside option: the alternative to buying, subtracted to form ΔV. Households
-# can rent; investors can only hold cash — different baselines (§6, §11).
-
-
-def household_outside_option(agent: "Agent", ctx: DecisionContext) -> float:
-    """Household's alternative to buying: value of its best feasible rental."""
-    ...
-
-
-def investor_outside_option(agent: "Agent", ctx: DecisionContext) -> float:
-    """Investor's alternative to buying: holding cash at the risk-free rate."""
+def _pnl_institution(
+    net_rent: float,
+    expected_capital_gain: float,
+    funding_rate: float,
+    ltv: float,
+    price: float,
+) -> float:
+    """Monthly P&L for an institutional investor.
+    Same structure as landlord but cheaper funding rate.
+    Π_I = R − φ − r_f·L·p + E[Δp]"""
     ...
 
 
 # ---------------------------------------------------------------------------
-# U(ΔV)   (§5, §8)
+# Value V  — monetary value before risk curvature
+# ---------------------------------------------------------------------------
+
+
+def value_owner_occupier(
+    quality_value: float,
+    expected_capital_gain: float,
+    mortgage_rate: float,
+    ltv: float,
+    price: float,
+) -> float:
+    """Value of owning and living in a property.
+    Quality adds direct consumption value on top of P&L.
+    V^OO = q_k + Π_H"""
+    ...
+
+
+def value_landlord(
+    net_rent: float,
+    expected_capital_gain: float,
+    btl_rate: float,
+    ltv: float,
+    price: float,
+) -> float:
+    """Value of owning and renting out a property.
+    Quality does not enter directly — only through the rent R.
+    V^LL = Π_L"""
+    ...
+
+
+def value_institution(
+    net_rent: float,
+    expected_capital_gain: float,
+    funding_rate: float,
+    ltv: float,
+    price: float,
+) -> float:
+    """Value of a property for an institutional investor.
+    Risk-neutral: value equals expected P&L, no curvature applied.
+    V^INST = E[Π_I]"""
+    ...
+
+
+# ---------------------------------------------------------------------------
+# ΔV per action — the logit inputs  (Stage 1)
+# ---------------------------------------------------------------------------
+# ΔV = V(action) − V(outside option).
+# Institutions use risk-free return as the outside option for every action.
+# Households use their best feasible rental as the outside option.
+
+
+# TODO: outside options and action sets for households and private landlords need
+# clarification before implementing their delta_v functions:
+#   - tenant: is rent the zero baseline (ΔV_rent=0) or does V_outside differ?
+#   - owner: does "rent" mean selling and becoming a tenant? what is V_outside for "stay"?
+#   - landlord: outside option for buy-to-let = risk-free or best rental?
+#   - landlord "occupy" action: too rare to model?
+
+# --- Institutional investor ---
+
+
+def delta_v_acquire(
+    net_rent: float,
+    expected_capital_gain: float,
+    funding_rate: float,
+    ltv: float,
+    price: float,
+    cash: float,
+    risk_free_rate: float,
+) -> float:
+    """Surplus from buying a property over investing the same cash at the risk-free rate.
+    ΔV_acquire = E[Π_I] − r_f·cash"""
+    ...
+
+
+def delta_v_hold(
+    net_rent: float,
+    expected_capital_gain: float,
+    funding_rate: float,
+    ltv: float,
+    price: float,
+    market_value: float,
+    risk_free_rate: float,
+) -> float:
+    """Surplus from continuing to own a property over liquidating it at market value.
+    ΔV_hold = E[Π_I] − r_f·market_value. Caller sums over the full portfolio to get V̄_hold."""
+    ...
+
+
+def delta_v_sell_institution(
+    net_rent: float,
+    expected_capital_gain: float,
+    funding_rate: float,
+    ltv: float,
+    price: float,
+    market_value: float,
+    risk_free_rate: float,
+) -> float:
+    """Surplus from selling. Symmetric opposite of hold: sell is preferred when
+    the property earns less than the risk-free rate.
+    ΔV_sell = −ΔV_hold"""
+    ...
+
+
+# ---------------------------------------------------------------------------
+# U(ΔV) — risk curvature
 # ---------------------------------------------------------------------------
 
 
 def crra(delta_v: float, gamma: float) -> float:
-    """Signed CRRA: U = sign(ΔV)·|ΔV|^(1−γ)/(1−γ). ΔV may be negative (financing
-    cost can exceed expected gain). γ=0 → identity (§8)."""
+    """Applies risk aversion to a surplus value.
+    U = sign(ΔV)·|ΔV|^(1−γ) / (1−γ).
+    γ=0 returns ΔV unchanged (risk-neutral, used for institutions)."""
     ...
 
 
@@ -84,73 +182,18 @@ def apply_loss_aversion(
     purchase_anchor: float,
     loss_aversion: float,
 ) -> float:
-    """V̄^sell = sell_value − λ·max(p_0 − p, 0) (§5). λ>1; institutions exempt."""
+    """If an agent sells a property for less than they originally paid, the perceived value of that sale is reduced by a penalty. This penalty is proportional to the loss.
+    Institutions do not pay this penalty (λ=1).
+    V̄^sell = sell_value − λ·max(p_0 − p, 0)."""
     ...
 
 
 # ---------------------------------------------------------------------------
-# ΔV per action — the logit inputs   (§10)
+# Logit — action and property selection
 # ---------------------------------------------------------------------------
-#
-
-
-def rental_property_value(agent: "Agent", prop: "Property", ctx: DecisionContext) -> float:
-    """Stage-2 scorer for rental candidates: quality consumption minus rent burden,
-    no capital gain term. Feeds the logit that picks which rental to bid on."""
-    ...
-
-
-def property_value(agent: "Agent", prop: "Property", ctx: DecisionContext) -> float:
-    """V_ik: this agent's value of property `prop` (§10 Stage 2). Scores the
-    property logit; delta_v_buy maxes it over candidates."""
-    ...
-
-
-def delta_v_buy(agent: "Agent", ctx: DecisionContext) -> float:
-    """Best buy value over feasible candidates, minus outside option.
-    Owner-occupier value if buying a home, landlord value if buy-to-let.
-    −inf if nothing is credit-feasible."""
-    ...
-
-
-def delta_v_rent(agent: "Agent", ctx: DecisionContext) -> float:
-    """Value of the best feasible rental vs outside option (§10)."""
-    ...
-
-
-def delta_v_stay(agent: "Agent", ctx: DecisionContext) -> float:
-    """Continuation value of holding the current home (owners, §10)."""
-    ...
-
-
-def delta_v_sell(agent: "Agent", prop: "Property", ctx: DecisionContext) -> float:
-    """Value of selling `prop`, loss-aversion adjusted for households (§13)."""
-    ...
-
-
-def delta_v_let(agent: "Agent", prop: "Property", ctx: DecisionContext) -> float:
-    """Value of letting `prop`: Π_L stream, ownership continued (§12)."""
-    ...
-
-
-def action_value(agent: "Agent", action: str, ctx: DecisionContext) -> float:
-    """V̄^a: the right delta_v_* for `action`, curved by crra at the agent's γ.
-    This is the scalar the Stage-1 logit consumes. −inf if infeasible (§10)."""
-    ...
-
-
-def feasible_actions(agent: "Agent", ctx: DecisionContext) -> list[str]:
-    """The agent's action set A_i (§10): tenant {buy, rent}; owner adds stay,
-    sell, let; institution {acquire, sell, hold}."""
-    ...
-
-
-# ---------------------------------------------------------------------------
-# Logit (mechanism)   (§10)
-# ---------------------------------------------------------------------------
-# Reused for both action choice (Stage 1) and property choice (Stage 2). Sees
-# only a value vector, never the agent. 
 
 
 def logit_choice(values: Mapping[Hashable, float], beta: float, rng) -> Hashable:
-    """Draw one key by multinomial logit: Pr(k) = exp(β·V_k) / Σ exp(β·V_k')."""
+    """Picks one option probabilistically. Higher value = more likely to be chosen.
+    Pr(k) = exp(β·V_k) / Σ exp(β·V_k'). Infeasible options get V = −inf → zero probability."""
+    ...
