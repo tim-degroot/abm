@@ -656,7 +656,7 @@ class HousingModel(mesa.Model):
     # ------------------------------------------------------------------
     # Main step
     # ------------------------------------------------------------------
-
+    #  UPDATE NEEDED: LISTING FOR SALE, THEN CLEAR PURCHASES, THEN LISTING RENT, THEN CLEAR RENT CREATE
     def step(self):
         """
         One model period. Full economic loop:
