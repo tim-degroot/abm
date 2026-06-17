@@ -510,14 +510,11 @@ class HousingModel(mesa.Model):
         # 1b. Rent servicing before turnover/listing so defaults can search now.
         self._service_rents()
 
+        # 1c. Age active tenancies (tracks minimum lease term for lock-in).
+        self._age_tenancies()
+
         # 2. Mark-to-market revaluation
         self._mark_to_market()
-
-        # 2b. Lease turnover: expire a fraction of active tenancies so rental
-        # supply recirculates and rents are re-discovered every period (plan §21).
-        # Done before listing/bidding so freed stock is listable and displaced
-        # tenants re-enter the rental search this same step.
-        self._expire_leases()
 
         avg_rent = self._avg_rent
         distress_sales = self._plan_distress_sales(avg_rent)
@@ -587,7 +584,6 @@ class HousingModel(mesa.Model):
             rent = prop.current_rent
             if not self._tenant_can_pay_rent(tenant, rent):
                 prop.occupant_id = None
-                prop.tenancy_quarters = 0
                 prop.listed_for_rent = True
                 tenant.vacate_rental()
                 continue
@@ -598,68 +594,15 @@ class HousingModel(mesa.Model):
             tenant.pay_rent(rent)
             landlord.receive_rent(rent)
 
-    # ------------------------------------------------------------------
-    # Lease turnover
-    # ------------------------------------------------------------------
-
-    def _expire_leases(self):
-        """
-        Randomly end a fraction of active rental tenancies each period, subject
-        to a minimum lease term.
-
-        Without turnover, tenants never leave: once the initial vacancies fill,
-        no property returns to the rental market and rental_transaction_volume
-        collapses to 0, freezing avg_rent at its seeded value. A Bernoulli draw
-        per active tenancy captures BOTH landlord non-renewal and tenant
-        relocation (job/family/move) — the same observable outcome: the lease
-        ends.
-
-        Minimum lease term (`market.min_lease_months`): a fresh tenant cannot
-        be turned over immediately. While tenancy age < the minimum term, only a
-        LOW "early-exit" hazard (`market.lease_early_exit_prob`) applies — this
-        models the genuine but uncommon real-life cases (break clauses,
-        relocation, distress, eviction). Set lease_early_exit_prob = 0 to forbid
-        early exit entirely (hard minimum term). Once tenancy age reaches the
-        minimum term, the normal turnover hazard (`market.lease_expiry_prob`,
-        default ~1/12 ⇒ ~3-year mean tenure) applies.
-
-        On expiry the property returns to the rental pool (vacant + listed) and
-        the tenant is displaced into the rental search queue (home_property=None,
-        so is_renter is True and _get_rental_candidates picks them up). Only
-        genuine tenancies expire — owner-occupiers (occupant == owner) are never
-        touched.
-        """
-        mcfg = self.config.market
-        base_prob = mcfg.lease_expiry_prob
-        early_prob = mcfg.lease_early_exit_prob
-        min_m = mcfg.min_lease_months
-
+    def _age_tenancies(self):
         for prop in self.properties:
-            # Active tenancy = someone occupies a property they do not own.
             if (
                 prop.occupant_id is None
                 or prop.owner_id is None
                 or prop.occupant_id == prop.owner_id
             ):
                 continue
-
-            # Age the tenancy by one period (month).
             prop.tenancy_months += 1
-
-            # Within the minimum term only the low early-exit hazard applies;
-            # after it, the normal turnover hazard takes over.
-            prob = base_prob if prop.tenancy_months >= min_m else early_prob
-            if prob <= 0 or self.rng.random() >= prob:
-                continue
-
-            tenant = self._agent_map.get(prop.occupant_id)
-            # Free the unit back into the rental pool.
-            prop.occupant_id = None
-            prop.tenancy_months = 0
-            prop.listed_for_rent = True
-            # Displace the tenant so it re-enters the rental search this step.
-            if isinstance(tenant, HouseholdAgent):
-                tenant.vacate_rental()
 
     # ------------------------------------------------------------------
     # Mark-to-market
@@ -890,14 +833,11 @@ class HousingModel(mesa.Model):
                 # Rental bid. Who searches for a rental this step:
                 #  - Unhoused households: always (they need a home).
                 #  - Housed renters still inside the minimum lease term: never
-                #    (locked in — see _tenant_locked_in / _expire_leases).
-                #  - Housed renters PAST the term: only occasionally, with low
-                #    probability `renter_research_prob` (voluntary re-search), and
-                #    then move only to a STRICTLY better option. This keeps the
-                #    market competitive (price discovery on turnover) without
-                #    unrealistic every-quarter moving.
-                #  - Others (owner-occupiers) only if they explicitly chose rent.
-                voluntary_move = False
+                #    (locked in).
+                #  - Housed renters past the minimum term: only if their action
+                #    choice is "rent". They only consider options strictly better
+                #    than their current home.
+                #  - Others (owner-occupiers): only if they explicitly chose rent.
                 if agent.home_property is None:
                     wants_rental = True
                 elif self._tenant_locked_in(agent):
@@ -907,10 +847,7 @@ class HousingModel(mesa.Model):
 
                 if wants_rental:
                     rental_candidates = self._get_rental_candidates(agent)
-                    # A voluntary mover only considers options strictly better
-                    # than its current home (higher quality); otherwise it stays
-                    # put. The unhoused take any available rental.
-                    if voluntary_move and rental_candidates:
+                    if agent.home_property is not None and rental_candidates:
                         current = self._property_map.get(agent.home_property)
                         if current is not None:
                             rental_candidates = [
@@ -1158,12 +1095,6 @@ class HousingModel(mesa.Model):
         return 0.0
 
     def _tenant_locked_in(self, agent):
-        """
-        True iff `agent` is a housed tenant still inside its minimum lease term,
-        and therefore cannot voluntarily move out yet. The unhoused are never
-        locked (they must search for a home); owner-occupiers are not tenants.
-        Mirrors the minimum-term restriction in _expire_leases.
-        """
         if agent.home_property is None or not agent.is_renter:
             return False
         home = self._property_map.get(agent.home_property)
@@ -1295,9 +1226,6 @@ class HousingModel(mesa.Model):
 
             prop.owner_id = txn.buyer_id
             prop.purchase_anchor_price = txn.price
-            # Update estimated value with smoothing to avoid single-transaction
-            # shocks instantly inflating mark-to-market. The smoothing alpha is
-            # configurable via `config.market.estimated_value_smooth_alpha`.
 
             prop.listed_for_sale = False
             prop.listed_for_rent = False
@@ -1356,7 +1284,7 @@ class HousingModel(mesa.Model):
                     prev.vacate_rental()
 
             prop.occupant_id = txn.tenant_id
-            prop.tenancy_months = 0  # fresh tenancy; starts the minimum term
+            prop.tenancy_months = 0
             prop.listed_for_rent = False
             prop.current_rent = txn.monthly_rent
 
@@ -1368,7 +1296,6 @@ class HousingModel(mesa.Model):
                     old_prop = self._property_map.get(old_home)
                     if old_prop is not None and old_prop.occupant_id == tenant.unique_id:
                         old_prop.occupant_id = None
-                        old_prop.tenancy_quarters = 0
                         if old_home not in tenant.owned_properties:
                             old_prop.listed_for_rent = True
                 tenant.move_into_rental(prop)

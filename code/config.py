@@ -84,13 +84,10 @@ class MarketConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     initial_rent_yield: float = Field(0.045, ge=0)
     min_lease_months: int = Field(12, ge=0)
-    lease_early_exit_prob: float = Field(0.0, ge=0, le=1)
-    lease_expiry_prob: float = Field(0.02, ge=0, le=1)
     landlord_reservation_yield: float = Field(0.04, ge=0)
     min_reservation_rent: float = Field(100.0, ge=0)
     loss_aversion_owner: float = Field(1.3, ge=1)
     loss_aversion_landlord: float = Field(1.1, ge=1)
-    estimated_value_smooth_alpha: float = Field(0.3, ge=0, le=1)
 
 
 class MacroConfig(BaseModel):

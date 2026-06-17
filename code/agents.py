@@ -225,9 +225,22 @@ class HouseholdAgent(mesa.Agent):
         else:
             scores.append(("buy", -np.inf))
 
-        # RENT — always available; scored by rent burden
-        monthly_burden = avg_market_rent / max(self.income, 1.0)  # should be expectations!
-        rent_score = -monthly_burden
+        # RENT — score depends on housing status
+        if self.home_property is not None and self.is_renter:
+            # Housed renter: compare current rent to market avg
+            current_prop = self.model._property_map.get(self.home_property)
+            if current_prop is not None and current_prop.current_rent is not None:
+                current_burden = current_prop.current_rent / max(self.income, 1.0)
+                market_burden = avg_market_rent / max(self.income, 1.0)
+                savings = current_burden - market_burden
+                moving_cost = 0.05
+                rent_score = savings - moving_cost
+            else:
+                rent_score = -avg_market_rent / max(self.income, 1.0)
+        else:
+            # Unhoused or owner-occupier: score reflects affordability
+            monthly_burden = avg_market_rent / max(self.income, 1.0)
+            rent_score = -monthly_burden
         scores.append(("rent", rent_score))
 
         # HOLD / SELL / RENT_OUT — only for owners
