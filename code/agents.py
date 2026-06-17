@@ -551,18 +551,6 @@ class InstitutionalAgent(mesa.Agent):
         self.portfolio = set()
         self._mortgages = {}
 
-        ecfg = self.model.config.expectations
-        self.expected_price_growth = (
-            expected_price_growth
-            if expected_price_growth is not None
-            else init_price_expectation(ecfg.init_price_growth)
-        )
-        self.expected_rent_growth = (
-            expected_rent_growth
-            if expected_rent_growth is not None
-            else init_rent_expectation(ecfg.init_rent_growth)
-        )
-
         self._housing_asset_value = 0.0
 
     @property
@@ -591,14 +579,33 @@ class InstitutionalAgent(mesa.Agent):
     # Stage 1: Action selection
     # ------------------------------------------------------------------
 
-    def choose_action(self, purchase_candidates, avg_rent):
-        ctx = utility.DecisionContext(
-            avg_market_rent=avg_rent,
-            purchase_candidates=purchase_candidates,
-            rental_candidates=(),
-        )
-        actions = utility.feasible_actions(self, ctx)
-        values = {a: utility.action_value(self, a, ctx) for a in actions}
+    def choose_action(self, purchase_candidates):
+        ltv = self.model.credit.inst_ltv
+        owned = [self.model._property_map[pid] for pid in self.portfolio]
+        feasible = [p for p in purchase_candidates
+                    if p.estimated_value <= self.cash / max(1e-9, 1.0 - ltv)]
+
+        def _acquire(p):
+            return utility.delta_v_acquire(
+                net_rent=p.quality * self.expected_rent_growth,  # TODO: rent level
+                expected_capital_gain=self.expected_price_growth * p.estimated_value,
+                funding_rate=self.funding_rate, ltv=ltv, price=p.estimated_value,
+                cash=self.cash, risk_free_rate=self.funding_rate,
+            )
+
+        def _hold(p):
+            return utility.delta_v_hold(
+                net_rent=p.quality * self.expected_rent_growth,  # TODO: rent level
+                expected_capital_gain=self.expected_price_growth * p.estimated_value,
+                funding_rate=self.funding_rate, ltv=ltv, price=p.estimated_value,
+                market_value=p.estimated_value, risk_free_rate=self.funding_rate,
+            )
+
+        values = {
+            "acquire": max((_acquire(p) for p in feasible), default=float("-inf")),
+            "hold":    sum(_hold(p) for p in owned) if owned else float("-inf"),
+            "sell":    max((-_hold(p) for p in owned), default=float("-inf")),
+        }
         return utility.logit_choice(values, self.model.config.agent.beta, self.model.random)
 
     # ------------------------------------------------------------------
