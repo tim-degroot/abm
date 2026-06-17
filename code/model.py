@@ -750,8 +750,7 @@ class HousingModel(mesa.Model):
                                 self._debug_counts["rental_listed"] += 1
 
             elif isinstance(agent, InstitutionalAgent):
-                purchase_candidates = self._get_purchase_candidates(agent)
-                action = agent.choose_action(purchase_candidates, avg_rent)
+                action = actions.get(agent.unique_id)
                 forced_sales = distress_sales.get(agent.unique_id, set())
 
                 for pid in list(agent.portfolio):
