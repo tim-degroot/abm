@@ -785,7 +785,7 @@ class HousingModel(mesa.Model):
                 action = actions.get(agent.unique_id)
 
                 # Purchase bid
-                if action == "buy":
+                if action in ("buy", "buy-to-let"):
                     # Determine feasibility using the credit envelope (LTV/DTI).
                     # Count filtered candidates for diagnostics.
                     num_candidates = len(purchase_candidates)
@@ -799,10 +799,10 @@ class HousingModel(mesa.Model):
                     )
 
                     if affordable:
-                        chosen = agent.choose_property(affordable, avg_rent)
+                        chosen = agent.choose_property(affordable, avg_rent, purpose=action)
                         if chosen is not None:
                             bid = min(
-                                agent.compute_bid(chosen, avg_rent),
+                                agent.compute_bid(chosen, avg_rent, purpose=action),
                                 self._purchase_price_ceiling(agent),
                             )
                             if bid > 0:
@@ -936,10 +936,10 @@ class HousingModel(mesa.Model):
                         continue
                     chosen = max(
                         candidates,
-                        key=lambda prop: agent.compute_bid(prop, avg_rent),
+                        key=lambda prop: agent.compute_bid(prop, avg_rent, purpose="buy-to-let"),
                     )
                     bid = min(
-                        agent.compute_bid(chosen, avg_rent),
+                        agent.compute_bid(chosen, avg_rent, purpose="buy-to-let"),
                         self._purchase_price_ceiling(agent),
                     )
                     if bid > 0:
