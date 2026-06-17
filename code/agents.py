@@ -43,9 +43,10 @@ from valuation import (
     household_max_rent,
     estimate_market_rent,
 )
+import utility
 
 
-def _logit_probs(scores):
+def _logit_probs(scores):  # We can remove it
     """
     Compute logit probabilities from a list of (label, score) pairs.
 
@@ -345,7 +346,7 @@ class HouseholdAgent(mesa.Agent):
 
         # If sold home, become renter (unhoused until rental clears) - THIS SHOULD BE ONLY IF YOU'RE LIVING IN THE HOUSE YOURE SELLING
         # this should be working release_property() only clears home_property if self.home_property == prop.id
-        
+
         if self.home_property == prop.id:
             self.home_property = None
 
@@ -441,20 +442,10 @@ class HouseholdAgent(mesa.Agent):
     # Expectation update
     # ------------------------------------------------------------------
 
-    def update_expectations(
-        self, price_signal, rent_signal, delta=None
-    ):  # should just be a call to the expectations
+    def update_expectations(self, price_signal, rent_signal, delta=None):
         d = delta if delta is not None else self.model.config.expectations.delta
-        noise_sd = self.model.config.expectations.noise_sd
         self.expected_price_growth = adaptive_update(self.expected_price_growth, price_signal, d)
         self.expected_rent_growth = adaptive_update(self.expected_rent_growth, rent_signal, d)
-        if noise_sd > 0.0:
-            self.expected_price_growth += float(
-                self.model.rng.normal(0.0, noise_sd)
-            )  # should be multiplicative
-            self.expected_rent_growth += float(
-                self.model.rng.normal(0.0, noise_sd)
-            )  # should be multiplicative
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -546,11 +537,10 @@ class InstitutionalAgent(mesa.Agent):
 
     def __init__(
         self,
-        unique_id,
+        # unique_id,
         model,
         cash,
         funding_rate,
-        home_zone,  # remove
         expected_price_growth=None,
         expected_rent_growth=None,
     ):
@@ -558,8 +548,6 @@ class InstitutionalAgent(mesa.Agent):
 
         self.cash = cash
         self.funding_rate = funding_rate
-        self.home_zone = home_zone
-
         self.portfolio = set()
         self._mortgages = {}
 
@@ -603,27 +591,15 @@ class InstitutionalAgent(mesa.Agent):
     # Stage 1: Action selection
     # ------------------------------------------------------------------
 
-    def choose_action(self, purchase_candidates, avg_rent):  # COMPLETELY WRONG!
-        acfg = self.model.config.agent
-        scores = []
-
-        if purchase_candidates:
-            best_wtp = max(self._wtp_for_property(p, avg_rent) for p in purchase_candidates)
-            scores.append(("buy", best_wtp))
-        else:
-            scores.append(("buy", -np.inf))
-
-        scores.append(("hold", self.expected_price_growth))
-        scores.append(
-            (
-                "sell",
-                (-self.expected_price_growth),
-            )
+    def choose_action(self, purchase_candidates, avg_rent):
+        ctx = utility.DecisionContext(
+            avg_market_rent=avg_rent,
+            purchase_candidates=purchase_candidates,
+            rental_candidates=(),
         )
-
-        probs = _logit_probs(scores)
-        actions, weights = zip(*probs)
-        return self.model.random.choices(list(actions), weights=list(weights), k=1)[0]
+        actions = utility.feasible_actions(self, ctx)
+        values = {a: utility.action_value(self, a, ctx) for a in actions}
+        return utility.logit_choice(values, self.model.config.agent.beta, self.model.random)
 
     # ------------------------------------------------------------------
     # Stage 2: Property selection
@@ -632,10 +608,13 @@ class InstitutionalAgent(mesa.Agent):
     def choose_property(self, candidates, avg_rent):
         if not candidates:
             return None
-        scores = [(p, self._wtp_for_property(p, avg_rent)) for p in candidates]
-        probs = _logit_probs(scores)
-        props, weights = zip(*probs)
-        return self.model.random.choices(list(props), weights=list(weights), k=1)[0]
+        ctx = utility.DecisionContext(
+            avg_market_rent=avg_rent,
+            purchase_candidates=candidates,
+            rental_candidates=(),
+        )
+        values = {p: utility.property_value(self, p, ctx) for p in candidates}
+        return utility.logit_choice(values, self.model.config.agent.beta, self.model.random)
 
     # ------------------------------------------------------------------
     # Stage 3: Bid formation
@@ -666,6 +645,12 @@ class InstitutionalAgent(mesa.Agent):
         self._mortgages[prop.id] = (price, ltv, 0)
 
     def release_property(self, prop, sale_price):
+        if prop.id not in self.portfolio:
+            error_msg = (
+                f"Institution {self.unique_id} cannot sell property {prop.id} it does not own."
+            )
+            raise RuntimeError(error_msg)
+
         self.portfolio.discard(prop.id)
         if prop.id in self._mortgages:
             orig_price, ltv, steps_held = self._mortgages[prop.id]
@@ -717,20 +702,10 @@ class InstitutionalAgent(mesa.Agent):
     # Expectation update
     # ------------------------------------------------------------------
 
-    def update_expectations(
-        self, price_signal, rent_signal, delta=None
-    ):  # Needs update for current isnglas
+    def update_expectations(self, price_signal, rent_signal, delta=None):
         d = delta if delta is not None else self.model.config.expectations.delta
-        noise_sd = self.model.config.expectations.noise_sd
         self.expected_price_growth = adaptive_update(self.expected_price_growth, price_signal, d)
         self.expected_rent_growth = adaptive_update(self.expected_rent_growth, rent_signal, d)
-        if noise_sd > 0.0:  # what is this?
-            self.expected_price_growth += float(
-                self.model.rng.normal(0.0, noise_sd)
-            )  # should be multiplicative
-            self.expected_rent_growth += float(
-                self.model.rng.normal(0.0, noise_sd)
-            )  # should be multiplicative
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -738,23 +713,15 @@ class InstitutionalAgent(mesa.Agent):
 
     def _wtp_for_property(self, prop, avg_rent):
         cfg = self.model.config
-        # Use market-average price for expected capital gains (see household
-        # comment above) to avoid property-specific positive feedback loops.
-        market_price = (  # why is this relevant ?
-            self.model._price_history[-1] if self.model._price_history else prop.estimated_value
-        )
-        # Same configured capital-gain treatment as households (see helper):
-        # "fixed_level" or rent-sourced "bounded_growth" to break the price loop - what is this ! No !
-
-        gross_monthly_rent = estimate_market_rent(
-            prop.quality, avg_rent, cfg.valuation.quality_sensitivity
-        )  # should come from expectations
-        net_rent = gross_monthly_rent
-        # Discount expected capital gains using funding_rate PLUS an
-        # institutional required return (risk premium) so low funding
-        effective_rate = float(self.funding_rate + cfg.agent.inst_required_return)
+        ltv = cfg.agent.inst_ltv
+        net_rent = estimate_market_rent(prop.quality, avg_rent, cfg.valuation.quality_sensitivity)
+        # Funding rate plus an institutional required return (risk premium).
+        effective_rate = self.funding_rate + cfg.agent.inst_required_return
+        # Cash-leverage ceiling: max price = cash / (1 - ltv).
+        credit_ceiling = self.cash / max(1e-9, 1.0 - ltv) if ltv < 1.0 else None
         wtp, bound = investor_wtp(
             net_rent,
+            self.expected_price_growth,  # E[Δp]
             effective_rate,
             cfg.agent.inst_ltv,
             expected_monthly_rent=gross_monthly_rent,
@@ -766,6 +733,7 @@ class InstitutionalAgent(mesa.Agent):
         if inst_ltv < 1.0:
             max_price = self.cash / max(1e-9, (1.0 - inst_ltv))
             wtp = min(wtp, max_price)
+
         return wtp
 
     def step(self):
