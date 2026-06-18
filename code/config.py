@@ -75,22 +75,16 @@ class ExpectationsConfig(BaseModel):
     init_rent_growth: float = 0.001667
     inst_noise_sd: float = Field(0.00072, ge=0)
     household_noise_sd: float = Field(0.00144, ge=0)
-    delta: float = Field(0.7, ge=0, le=1)
-    signal_window: int = Field(12, gt=0)
-    inst_forecast_window: int = Field(36, gt=0)
 
 
 class MarketConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    initial_rent_yield: float = Field(0.045, ge=0)
-    min_lease_months: int = Field(12, ge=0)
-    landlord_reservation_yield: float = Field(0.04, ge=0)
-    min_reservation_rent: float = Field(100.0, ge=0)
-    loss_aversion_owner: float = Field(1.3, ge=1)
-    loss_aversion_landlord: float = Field(1.1, ge=1)
+    min_tenancy = Field(12, ge=0)
+    early_exit_prob = Field(0.05, ge=0, le=1)
+    normal_exit_prob = Field(0.2, ge=0, le=1)
 
 
-class MacroConfig(BaseModel):
+class MacroConfig(BaseModel):  # Need to add credit conditions
     model_config = ConfigDict(frozen=True, extra="forbid")
     initial_state: Literal["Boom", "Neutral", "Recession"] = "Neutral"
     boom_mean: float = 0.0025
