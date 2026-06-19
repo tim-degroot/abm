@@ -6,7 +6,7 @@ import sys
 
 import pandas as pd
 
-_RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
+_RESULTS_DIR = os.path.join(os.path.dirname(__file__), "../results")
 
 
 def _parse_args(argv):
