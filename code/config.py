@@ -29,12 +29,13 @@ class PropertyInitConfig(BaseModel):
     property_residual_sd: float = Field(0.5, ge=0)
     init_base_price: float = Field(200_000.0, gt=0)
     init_price_quality_sensitivity: float = Field(50_000.0, ge=0)
+    init_ownership_prob: float = Field(0.65, ge=0, le=1)
 
 
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     income_mean: float = Field(35_000.0, gt=0)
-    income_sigma: float = Field(10_000.0, ge=0)
+    income_sigma: float = Field(0.5, ge=0)
     wealth_income_mult_low: float = Field(0, ge=0)
     wealth_income_mult_high: float = Field(25.0, ge=0)
     ltv_dist_low: float = Field(0.70, ge=0, le=1)
@@ -64,7 +65,7 @@ class CreditConfig(BaseModel):
 class ValuationConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     quality_sensitivity: float = Field(0.3, ge=0)
-    quality_value_scale: float = Field(1.0, ge=0)
+    quality_value_scale: float = Field(1000.0, ge=0)
     max_rent_income_ratio: float = Field(0.35, ge=0, le=1)
 
 
@@ -81,8 +82,6 @@ class MarketConfig(BaseModel):
     min_tenancy: int = Field(12, ge=0)
     early_exit_prob: float = Field(0.05, ge=0, le=1)
     normal_exit_prob: float = Field(0.2, ge=0, le=1)
-    initial_rent_yield: float = Field(0.00333, gt=0)
-
 
 class MacroConfig(BaseModel):  # Need to add credit conditions
     model_config = ConfigDict(frozen=True, extra="forbid")

@@ -300,14 +300,13 @@ def risk_adjusted_growth(
 @dataclass
 class DecisionContext:
     """Context passed to property_value for property-level evaluation."""
-    avg_market_rent: float
     purchase_candidates: list
     rental_candidates: tuple = ()
 
 
 def property_value(agent, prop, ctx: DecisionContext) -> float:
     """Evaluate a property for an agent. Delegates to the agent's WTP method."""
-    return agent._wtp_for_property(prop, ctx.avg_market_rent)
+    return agent._wtp_for_property(prop)
 
 
 def logit_choice(values: Mapping[Hashable, float], rng, beta: float = 1.0) -> Hashable:

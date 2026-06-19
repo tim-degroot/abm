@@ -14,10 +14,10 @@ class CreditEnvironment:
     def _update(self):
         self.__init__()  # re-read config values in case they have changed
 
-    def monthly_mortgage_payment(self, price, ltv):
+    def monthly_mortgage_payment(self, price, ltv, rate=None):
         principal = ltv * price
         n = self.loan_term_months
-        r = self.mortgage_rate
+        r = rate if rate is not None else self.mortgage_rate
         if r == 0:
             return principal / n
         return principal * r * (1 + r) ** n / ((1 + r) ** n - 1)
@@ -32,8 +32,9 @@ class CreditEnvironment:
         balance = P * ((1 + r) ** n - (1 + r) ** t) / ((1 + r) ** n - 1)
         return max(0.0, balance)
 
-    def max_affordable_price(self, cash, monthly_income):
+    def max_affordable_price(self, cash, annual_income):
         deposit_ceiling = cash / (1.0 - self.ltv_limit)
+        monthly_income = annual_income / 12.0
         max_payment = self.dti_limit * monthly_income
         r = self.mortgage_rate
         n = self.loan_term_months

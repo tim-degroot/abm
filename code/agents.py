@@ -67,12 +67,12 @@ def _logit_probs(scores):  # We can remove it
 
     finite_mask = np.isfinite(values)
     if not np.any(finite_mask):
-        probs = np.zeros(len(values))
+        probs = np.ones(len(values)) / len(values)
     else:
         shifted = np.where(finite_mask, values - values[finite_mask].max(), -np.inf)
         exp_v = np.where(finite_mask, np.exp(np.clip(shifted, -500, 0)), 0.0)
         total = exp_v.sum()
-        probs = exp_v / total if total > 0 else np.zeros(len(values))
+        probs = exp_v / total if total > 0 else np.ones(len(values)) / len(values)
 
     return list(zip(labels, probs))
 
@@ -198,9 +198,18 @@ class HouseholdAgent(mesa.Agent):
     # Stage 1: Action selection
     # ------------------------------------------------------------------
 
-    def choose_action(
-        self, purchase_candidates, avg_market_rent
-    ):  # NONE OF THE REPRESENTATIVE UTILITIES FOLLOW THE PLAN
+    def _local_rent_estimate(self):
+        """Agent's estimate of market rent from local comparable properties."""
+        zones = self.model.get_household_search_zones(self.home_zone)
+        comps = [
+            p.current_rent for p in self.model.properties
+            if p.zone in zones and p.current_rent is not None
+        ]
+        if comps:
+            return float(np.mean(comps))
+        return (self.income / 12.0) * self.model.config.valuation.max_rent_income_ratio
+
+    def choose_action(self, purchase_candidates):
         """
         Choose action via multinomial logit.
 
@@ -217,8 +226,8 @@ class HouseholdAgent(mesa.Agent):
         ]
         if affordable:
             best_wtp = max(
-                self._wtp_for_property(p, avg_market_rent, credit, purpose="buy")
-                for p in affordable  # SHOULD BE EXPECTATIONS NOT MKT AVG
+                self._wtp_for_property(p, credit, purpose="buy")
+                for p in affordable
             )
             scores.append(("buy", best_wtp))
         else:
@@ -227,7 +236,7 @@ class HouseholdAgent(mesa.Agent):
         # BUY-TO-LET (investment) — same candidate pool, investor WTP
         if affordable:
             best_btl_wtp = max(
-                self._wtp_for_property(p, avg_market_rent, credit, purpose="buy-to-let")
+                self._wtp_for_property(p, credit, purpose="buy-to-let")
                 for p in affordable
             )
             scores.append(("buy-to-let", best_btl_wtp))
@@ -235,20 +244,19 @@ class HouseholdAgent(mesa.Agent):
             scores.append(("buy-to-let", -np.inf))
 
         # RENT — score depends on housing status
+        rent_estimate = self._local_rent_estimate()
         if self.home_property is not None and self.is_renter:
-            # Housed renter: compare current rent to market avg
             current_prop = self.model._property_map.get(self.home_property)
             if current_prop is not None and current_prop.current_rent is not None:
                 current_burden = current_prop.current_rent / max(self.income, 1.0)
-                market_burden = avg_market_rent / max(self.income, 1.0)
+                market_burden = rent_estimate / max(self.income, 1.0)
                 savings = current_burden - market_burden
                 moving_cost = 0.05
                 rent_score = savings - moving_cost
             else:
-                rent_score = -avg_market_rent / max(self.income, 1.0)
+                rent_score = -rent_estimate / max(self.income, 1.0)
         else:
-            # Unhoused or owner-occupier: score reflects affordability
-            monthly_burden = avg_market_rent / max(self.income, 1.0)
+            monthly_burden = rent_estimate / max(self.income, 1.0)
             rent_score = -monthly_burden
         scores.append(("rent", rent_score))
 
@@ -260,17 +268,25 @@ class HouseholdAgent(mesa.Agent):
             sell_score = -self.expected_price_growth
             scores.append(("sell", sell_score))
 
-        # RENT_OUT home — only if owner-occupier (move out, become renter+landlord) - THEY ACTUALLY HAVE TO GO TO THE RENTAL MARKET - CHECK THIS
+        # RENT_OUT home — only if owner-occupier
         if self.is_owner_occupier:
             rent_out_score = (
-                avg_market_rent  # EXPECTATIONS
+                rent_estimate
                 * 12
                 / max(self.model._property_map[self.home_property].estimated_value, 1.0)
                 + self.expected_rent_growth
             )
             scores.append(("rent_out", rent_out_score))
 
-        probs = _logit_probs(scores)
+        # Normalize scores so all actions live on comparable scale (NewPlan §31)
+        max_affordable = credit.max_affordable_price(self.cash, self.income)
+        normalized = []
+        for label, score in scores:
+            if label in ("buy", "buy-to-let") and max_affordable > 0:
+                normalized.append((label, min(score / max_affordable, 1.0)))
+            else:
+                normalized.append((label, score))
+        probs = _logit_probs(normalized)
         actions, weights = zip(*probs)
         return self.model.random.choices(list(actions), weights=list(weights), k=1)[0]
 
@@ -278,12 +294,12 @@ class HouseholdAgent(mesa.Agent):
     # Stage 2: Property selection
     # ------------------------------------------------------------------
 
-    def choose_property(self, candidates, avg_market_rent, purpose="buy"):  # EXPECTATIONS
+    def choose_property(self, candidates, purpose="buy"):
         """Select among feasible candidates via logit on WTP."""
         if not candidates:
             return None
         credit = self.model.credit
-        scores = [(p, self._wtp_for_property(p, avg_market_rent, credit, purpose=purpose)) for p in candidates]
+        scores = [(p, self._wtp_for_property(p, credit, purpose=purpose)) for p in candidates]
         probs = _logit_probs(scores)
         props, weights = zip(*probs)
         return self.model.random.choices(list(props), weights=list(weights), k=1)[0]
@@ -292,9 +308,9 @@ class HouseholdAgent(mesa.Agent):
     # Stage 3: Bid formation
     # ------------------------------------------------------------------
 
-    def compute_bid(self, prop, avg_market_rent, purpose="buy"):
+    def compute_bid(self, prop, purpose="buy"):
         """Truthful WTP bid for ownership."""
-        return self._wtp_for_property(prop, avg_market_rent, self.model.credit, purpose=purpose)
+        return self._wtp_for_property(prop, self.model.credit, purpose=purpose)
 
     def compute_rent_bid(self):
         """Maximum monthly rent bid (affordability ceiling)."""
@@ -414,9 +430,10 @@ class HouseholdAgent(mesa.Agent):
         Payment = monthly_mortgage_payment (each step is one month).
         """
         credit = self.model.credit
+        rate = self.model.config.credit.mortgage_rate
         updated = {}
         for pid, (orig_price, ltv, steps_held) in self._mortgages.items():
-            payment = credit.monthly_mortgage_payment(orig_price, ltv)
+            payment = credit.monthly_mortgage_payment(orig_price, ltv, rate)
             self.cash -= payment
             updated[pid] = (orig_price, ltv, steps_held + 1)
         self._mortgages = updated
@@ -424,20 +441,21 @@ class HouseholdAgent(mesa.Agent):
     def mortgage_payment_due(self):
         """Total mortgage servicing due this period (monthly)."""
         credit = self.model.credit
+        rate = self.model.config.credit.mortgage_rate
         return float(
             sum(
-                credit.monthly_mortgage_payment(orig_price, ltv)
+                credit.monthly_mortgage_payment(orig_price, ltv, rate)
                 for orig_price, ltv, _ in self._mortgages.values()
             )
         )
 
-    def distress_sale_candidates(self, avg_market_rent):
+    def distress_sale_candidates(self):
         """Rank owned properties from least to greatest expected utility loss."""
         credit = self.model.credit
         ranked = [
             (
                 self._wtp_for_property(
-                    self.model._property_map[pid], avg_market_rent, credit, purpose="buy-to-let"
+                    self.model._property_map[pid], credit, purpose="buy-to-let"
                 ),
                 self.model._property_map[pid],
             )
@@ -489,33 +507,28 @@ class HouseholdAgent(mesa.Agent):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _wtp_for_property(self, prop, avg_market_rent, credit, purpose="buy"):
+    def _wtp_for_property(self, prop, credit, purpose="buy"):
         cfg = self.model.config
-        monthly_rent = estimate_market_rent(
-            prop.quality, avg_market_rent, cfg.valuation.quality_sensitivity
-        )
         reference_price = (
             self.model._price_history[-1] if self.model._price_history else prop.estimated_value
         )
         capital_gain = self.expected_price_growth * reference_price
 
+        # Agent's own estimate of what a property in this zone would rent for
+        zones = self.model.get_household_search_zones(self.home_zone)
+        comps = [
+            p.current_rent for p in self.model.properties
+            if p.zone in zones and p.current_rent is not None
+        ]
+        base_rent = float(np.mean(comps)) if comps else self._local_rent_estimate()
+        monthly_rent = estimate_market_rent(
+            prop.quality, base_rent, cfg.valuation.quality_sensitivity
+        )
+
         if purpose == "buy":
             # Owner-occupier primary residence purchase
             quality_value = cfg.valuation.quality_value_scale * prop.quality
-            zones = self.model.get_household_search_zones(self.home_zone)
-            rental_props = [
-                p for p in self.model.properties if p.zone in zones and p.id != self.home_property
-            ]
-            best_monthly_rent = 0.0
-            for rp in rental_props:
-                mr = estimate_market_rent(
-                    rp.quality, avg_market_rent, cfg.valuation.quality_sensitivity
-                )
-                if mr > best_monthly_rent:
-                    best_monthly_rent = mr
-            if best_monthly_rent <= 0.0:
-                best_monthly_rent = avg_market_rent
-            outside_option = best_monthly_rent
+            outside_option = base_rent
 
             wtp = household_wtp(
                 quality_value,
@@ -615,7 +628,7 @@ class InstitutionalAgent(mesa.Agent):
     # Stage 1: Action selection
     # ------------------------------------------------------------------
 
-    def choose_action(self, purchase_candidates, avg_rent=None):
+    def choose_action(self, purchase_candidates):
         ltv = self.model.credit.inst_ltv
         owned = [self.model._property_map[pid] for pid in self.portfolio]
         feasible = [p for p in purchase_candidates
@@ -648,11 +661,10 @@ class InstitutionalAgent(mesa.Agent):
     # Stage 2: Property selection
     # ------------------------------------------------------------------
 
-    def choose_property(self, candidates, avg_rent):
+    def choose_property(self, candidates):
         if not candidates:
             return None
         ctx = utility.DecisionContext(
-            avg_market_rent=avg_rent,
             purchase_candidates=candidates,
             rental_candidates=(),
         )
@@ -663,8 +675,8 @@ class InstitutionalAgent(mesa.Agent):
     # Stage 3: Bid formation
     # ------------------------------------------------------------------
 
-    def compute_bid(self, prop, avg_rent):
-        return self._wtp_for_property(prop, avg_rent)
+    def compute_bid(self, prop):
+        return self._wtp_for_property(prop)
 
     # ------------------------------------------------------------------
     # Balance sheet
@@ -710,9 +722,10 @@ class InstitutionalAgent(mesa.Agent):
 
     def service_mortgages(self):
         credit = self.model.credit
+        rate = self.model.config.credit.inst_funding_rate
         updated = {}
         for pid, (orig_price, ltv, steps_held) in self._mortgages.items():
-            payment = credit.monthly_mortgage_payment(orig_price, ltv)
+            payment = credit.monthly_mortgage_payment(orig_price, ltv, rate)
             self.cash -= payment
             updated[pid] = (orig_price, ltv, steps_held + 1)
         self._mortgages = updated
@@ -720,18 +733,19 @@ class InstitutionalAgent(mesa.Agent):
     def mortgage_payment_due(self):
         """Total mortgage servicing due this period (monthly)."""
         credit = self.model.credit
+        rate = self.model.config.credit.inst_funding_rate
         return float(
             sum(
-                credit.monthly_mortgage_payment(orig_price, ltv)
+                credit.monthly_mortgage_payment(orig_price, ltv, rate)
                 for orig_price, ltv, _ in self._mortgages.values()
             )
         )
 
-    def distress_sale_candidates(self, avg_rent):
+    def distress_sale_candidates(self):
         """Rank owned properties from least to greatest expected utility loss."""
         ranked = [
             (
-                self._wtp_for_property(self.model._property_map[pid], avg_rent),
+                self._wtp_for_property(self.model._property_map[pid]),
                 self.model._property_map[pid],
             )
             for pid in self.portfolio
@@ -769,26 +783,28 @@ class InstitutionalAgent(mesa.Agent):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _wtp_for_property(self, prop, avg_rent):
+    def _wtp_for_property(self, prop):
         cfg = self.model.config
         reference_price = (
             self.model._price_history[-1] if self.model._price_history else prop.estimated_value
         )
         capital_gain = self.expected_price_growth * reference_price
 
+        comps = [p.current_rent for p in self.model.properties if p.current_rent is not None]
+        base_rent = float(np.mean(comps)) if comps else 0.0
         gross_monthly_rent = estimate_market_rent(
-            prop.quality, avg_rent, cfg.valuation.quality_sensitivity
+            prop.quality, base_rent, cfg.valuation.quality_sensitivity
         )
         net_rent = gross_monthly_rent
-        effective_rate = float(self.funding_rate + cfg.agent.inst_required_return)
+        effective_rate = float(self.funding_rate + cfg.agent_init.inst_required_return)
 
         wtp = investor_wtp(
             net_rent,
             capital_gain,
             effective_rate,
-            cfg.agent.inst_ltv,
+            cfg.credit.inst_ltv,
         )
-        inst_ltv = cfg.agent.inst_ltv
+        inst_ltv = cfg.credit.inst_ltv
         if inst_ltv < 1.0:
             max_price = self.cash / max(1e-9, (1.0 - inst_ltv))
             wtp = min(wtp, max_price)

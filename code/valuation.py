@@ -71,10 +71,11 @@ def investor_wtp(
 
 
 def household_max_rent(income: float, max_rent_income_ratio: float) -> float:
-    """Maximum monthly rent bid from the affordability ceiling."""
+    """Maximum monthly rent bid from the affordability ceiling.
+    Income is annual; ratio is monthly-to-income."""
     if income <= 0.0:
         return 0.0
-    return income * max_rent_income_ratio
+    return (income / 12.0) * max_rent_income_ratio
 
 
 def estimate_market_rent(

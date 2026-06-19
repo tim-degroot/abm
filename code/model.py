@@ -66,14 +66,16 @@ class HousingModel(mesa.Model):
         # Create agents and initial state
         self._init_agents(cfg.sim.n_households, cfg.sim.n_institutions)
         self._agent_map = {a.unique_id: a for a in self.agents}
-        self._init_ownership_and_rent()
-        self._seed_history()
-        self._avg_rent = self._estimate_initial_rent()
-        self.current_macro_state = getattr(self.config.macro, "initial_state", "Neutral")
 
-        # Per-step registers
+        # Per-step registers (must exist before step 0 rental auction)
         self.this_step_transactions = []
         self.this_step_rental_transactions = []
+        self.all_transactions = []
+        self.all_rental_transactions = []
+
+        self._init_ownership_and_rent()
+        self._seed_history()
+        self.current_macro_state = getattr(self.config.macro, "initial_state", "Neutral")
 
         # Debug logs
         self._debug_counts = {
@@ -88,10 +90,6 @@ class HousingModel(mesa.Model):
         }
         self._debug_bid_log = []
         self._debug_rental_bid_log = []
-
-        # Transaction history
-        self.all_transactions = []
-        self.all_rental_transactions = []
 
         # Market state history for institutional price forecasts
         self._state_history: list[dict] = []
@@ -294,7 +292,7 @@ class HousingModel(mesa.Model):
             float(self.rng.uniform(ai.ltv_dist_low, ai.ltv_dist_high)),
         )
 
-    def _assign_property_to_agent(self, agent, prop, is_home, r, agent_type):
+    def _assign_property_to_agent(self, agent, prop, is_home, agent_type):
         price = prop.estimated_value
         ltv = self._draw_origination_ltv()
         deposit = price * (1.0 - ltv)
@@ -302,7 +300,7 @@ class HousingModel(mesa.Model):
         # Feasibility
         if agent_type == "household":
             payment = self.credit.monthly_mortgage_payment(price, ltv)
-            income_ok = payment <= self.credit.dti_limit * agent.income
+            income_ok = payment <= self.credit.dti_limit * agent.income / 12.0
             if not income_ok:
                 return False
 
@@ -348,39 +346,40 @@ class HousingModel(mesa.Model):
         for hh in households:
             if not available:
                 break
+            if self.rng.random() > cfg.property_init.init_ownership_prob:
+                continue
             zone_props = [p for p in available if p.zone == hh.home_zone]
             if not zone_props:
                 continue
             prop = zone_props[0]
             if self._assign_property_to_agent(
-                hh, prop, is_home=True, r=None, agent_type="household"
+                hh, prop, is_home=True, agent_type="household"
             ):
                 available.remove(prop)
 
         for k, prop in enumerate(list(available)):
             inst = institutions[k % len(institutions)]
             if self._assign_property_to_agent(
-                inst, prop, is_home=False, r=None, agent_type="institution"
+                inst, prop, is_home=False, agent_type="institution"
             ):
                 available.remove(prop)
 
-        # Rent
-        rental_pool = [p for p in self.properties if p.occupant_id is None and p.listed_for_rent]
+        # Step 0 rental market — house all unhoused via auction
         renter_households = [h for h in households if h.home_property is None]
-        for hh in renter_households:
-            zone_match = [p for p in rental_pool if p.zone == hh.home_zone]
-            prop = zone_match[0] if zone_match else (rental_pool[0] if rental_pool else None)
-            rental_pool.remove(prop)
-            prop.occupant_id = hh.unique_id
-            prop.listed_for_rent = False
-            prop.current_rent = (
-                prop.estimated_value
-                * self.config.market.initial_rent_yield
-                / 12.0
-                * (hh.income / np.mean([h.income for h in households]))
-            )
-            hh.home_property = prop.id
-            hh.home_zone = prop.zone
+        if renter_households:
+            rental_market = RentalMarket(step=0)
+            for prop in self.properties:
+                if prop.occupant_id is None and prop.listed_for_rent:
+                    rental_market.list_property(prop.id, prop.owner_id, 0.0)
+            for hh in renter_households:
+                candidates = self._get_rental_candidates(hh)
+                if candidates:
+                    rent_bid = hh.compute_rent_bid()
+                    if rent_bid > 0:
+                        for c in candidates:
+                            rental_market.submit_bid(c.id, hh.unique_id, rent_bid)
+            rental_txns = rental_market.resolve()
+            self._apply_rental_transactions(rental_txns)
 
         self._verify_accounting()
 
@@ -405,17 +404,12 @@ class HousingModel(mesa.Model):
         ), f"Mortgage debt {debt:.2f} exceeds housing assets {props_assets:.2f}"
 
     def _seed_history(self):
-        """Seed price and rent history from initial property values."""
+        """Seed price history from initial property values."""
         allocated = [p.purchase_anchor_price for p in self.properties if p.owner_id is not None]
         if allocated:
             self._price_history = [float(np.mean(allocated))]
         else:
             self._price_history = []
-        self._rent_history = [self._estimate_initial_rent()]
-
-    def _estimate_initial_rent(self) -> float:
-        avg_value = float(np.mean([p.estimated_value for p in self.properties]))
-        return avg_value * self.config.market.initial_rent_yield
 
     def _plan_distress_sales(self):  # too extreme
         """
@@ -489,11 +483,10 @@ class HousingModel(mesa.Model):
         actions = {}
         for agent in self.agents:
             purchase_candidates = self._get_purchase_candidates(agent, listed_only=False)
-            avg_rent = self._avg_rent
             if isinstance(agent, HouseholdAgent):
-                actions[agent.unique_id] = agent.choose_action(purchase_candidates, avg_rent)
+                actions[agent.unique_id] = agent.choose_action(purchase_candidates)
             elif isinstance(agent, InstitutionalAgent):
-                actions[agent.unique_id] = agent.choose_action(purchase_candidates, avg_rent)
+                actions[agent.unique_id] = agent.choose_action(purchase_candidates)
 
         self._list_properties(ownership_market, rental_market, actions, distress_sales)
         self._submit_bids(ownership_market, rental_market, actions)
@@ -603,8 +596,7 @@ class HousingModel(mesa.Model):
         """
         for prop in self.properties:
             if prop.listed_for_rent:
-                reservation = self._reservation_rent(prop)
-                rental_market.list_property(prop.id, prop.owner_id, reservation)
+                rental_market.list_property(prop.id, prop.owner_id, 0.0)
                 self._debug_counts["rental_listed"] += 1
 
         for agent in self.agents:
@@ -624,8 +616,7 @@ class HousingModel(mesa.Model):
 
                 if hasattr(agent, "home_property") and pid == agent.home_property:
                     if action == "sell":
-                        reservation = self._seller_reservation(prop, agent)
-                        ownership_market.list_property(pid, agent.unique_id, reservation)
+                        ownership_market.list_property(pid, agent.unique_id, 0.0)
                         prop.listed_for_sale = True
                         self._debug_counts["ownership_listed"] += 1
                     elif action == "rent_out":
@@ -635,8 +626,7 @@ class HousingModel(mesa.Model):
                             self._debug_counts["rental_listed"] += 1
                 else:
                     if action == "sell":
-                        reservation = self._seller_reservation(prop, agent)
-                        ownership_market.list_property(pid, agent.unique_id, reservation)
+                        ownership_market.list_property(pid, agent.unique_id, 0.0)
                         prop.listed_for_sale = True
                         self._debug_counts["ownership_listed"] += 1
                     else:
@@ -652,44 +642,49 @@ class HousingModel(mesa.Model):
             purchase_candidates = self._get_purchase_candidates(agent)
             action = actions.get(agent.unique_id)
 
-            if action == "buy":
-                num_candidates = len(purchase_candidates)
+            if action in ("buy", "buy-to-let", "acquire"):
                 affordable = [
                     p
                     for p in purchase_candidates
                     if p.listed_for_sale and self._purchase_feasible(agent, p)
                 ]
-                if affordable:
-                    chosen = agent.choose_property(affordable)
-                    if chosen is not None:
-                        bid = min(
-                            agent.compute_bid(chosen),
-                            self._purchase_price_ceiling(agent),
-                        )
-                        if bid > 0:
-                            if self._debug_bid_logging:
-                                self._debug_bid_log.append(
-                                    {
-                                        "step": int(self.steps),
-                                        "property_id": int(chosen.id),
-                                        "bidder_id": int(agent.unique_id),
-                                        "amount": float(bid),
-                                        "bidder_type": (
-                                            "household"
-                                            if isinstance(agent, HouseholdAgent)
-                                            else "institution"
-                                        ),
-                                        "cash": float(agent.cash),
-                                        "income": float(agent.income),
-                                        "expected_price_growth": float(agent.expected_price_growth),
-                                    }
-                                )
-                            ownership_market.submit_bid(
-                                chosen.id, agent.unique_id, bid, "household"
-                            )
-                            submitted_pairs.add((agent.unique_id, chosen.id))
-                            self._debug_counts["ownership_bids_submitted"] += 1
-                            self._debug_counts["ownership_bid_samples"].append(bid)
+                if not affordable:
+                    continue
+                chosen = agent.choose_property(affordable)
+                if chosen is None:
+                    continue
+                bid = min(
+                    agent.compute_bid(chosen),
+                    self._purchase_price_ceiling(agent),
+                )
+                if bid <= 0:
+                    continue
+                if self._debug_bid_logging:
+                    self._debug_bid_log.append(
+                        {
+                            "step": int(self.steps),
+                            "property_id": int(chosen.id),
+                            "bidder_id": int(agent.unique_id),
+                            "amount": float(bid),
+                            "bidder_type": (
+                                "household"
+                                if isinstance(agent, HouseholdAgent)
+                                else "institution"
+                            ),
+                            "cash": float(agent.cash),
+                            "income": float(agent.income),
+                            "expected_price_growth": float(agent.expected_price_growth),
+                        }
+                    )
+                bidder_type = (
+                    "household" if isinstance(agent, HouseholdAgent) else "institution"
+                )
+                ownership_market.submit_bid(
+                    chosen.id, agent.unique_id, bid, bidder_type
+                )
+                submitted_pairs.add((agent.unique_id, chosen.id))
+                self._debug_counts["ownership_bids_submitted"] += 1
+                self._debug_counts["ownership_bid_samples"].append(bid)
             elif action == "rent":
                 rental_candidates = self._get_rental_candidates(agent)
                 if rental_candidates:
@@ -746,7 +741,7 @@ class HousingModel(mesa.Model):
             if agent.cash < current_due + deposit:
                 return False
             new_payment = self.credit.monthly_mortgage_payment(prop.estimated_value, ltv)
-            return current_due + new_payment <= self.credit.dti_limit * agent.income
+            return current_due + new_payment <= self.credit.dti_limit * agent.income / 12.0
 
         if isinstance(agent, InstitutionalAgent):
             ltv = self.credit.inst_ltv
@@ -786,23 +781,6 @@ class HousingModel(mesa.Model):
             return listed
         zones = self.get_household_search_zones(agent.home_zone)
         return [p for p in listed if p.zone in zones]
-
-    def _reservation_rent(self, prop) -> float:
-        """Minimum monthly rent a landlord will accept."""
-        return prop.estimated_value * self.config.market.initial_rent_yield
-
-    def _seller_reservation(self, prop, seller_agent):  # needs help
-        """
-        Compute a seller's reservation price incorporating loss aversion.
-        """
-        cfg = self.config
-        p0 = prop.purchase_anchor_price
-
-        if isinstance(seller_agent, InstitutionalAgent):
-            return min(p0, prop.estimated_value)
-
-        if isinstance(seller_agent, HouseholdAgent):
-            return p0 * (1.0 + cfg.agent_init.loss_aversion * (prop.estimated_value - p0) / p0)
 
     def _apply_ownership_transactions(self, transactions):
         for txn in transactions:
@@ -845,6 +823,8 @@ class HousingModel(mesa.Model):
         }
         for txn in transactions:
             prop = self._property_map[txn.property_id]
+            if not prop.listed_for_rent:
+                continue
             tenant = self._agent_map.get(txn.tenant_id)
             landlord = self._agent_map.get(txn.landlord_id)
 
