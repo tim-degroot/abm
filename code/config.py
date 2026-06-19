@@ -79,9 +79,9 @@ class ExpectationsConfig(BaseModel):
 
 class MarketConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    min_tenancy = Field(12, ge=0)
-    early_exit_prob = Field(0.05, ge=0, le=1)
-    normal_exit_prob = Field(0.2, ge=0, le=1)
+    min_tenancy: int = Field(12, ge=0)
+    early_exit_prob: float = Field(0.05, ge=0, le=1)
+    normal_exit_prob: float = Field(0.2, ge=0, le=1)
 
 
 class MacroConfig(BaseModel):  # Need to add credit conditions
