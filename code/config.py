@@ -29,8 +29,6 @@ class PropertyInitConfig(BaseModel):
     property_residual_sd: float = Field(0.5, ge=0)
     init_base_price: float = Field(200_000.0, gt=0)
     init_price_quality_sensitivity: float = Field(50_000.0, ge=0)
-    target_household_share: float = Field(0.7, ge=0)
-    target_inst_share: float = Field(0.3, ge=0)
 
 
 class AgentInitConfig(BaseModel):

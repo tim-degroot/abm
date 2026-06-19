@@ -16,7 +16,6 @@ Orchestrates initalisation and the economic loop each step:
 """
 
 import mesa
-import random
 import numpy as np
 from mesa.datacollection import DataCollector
 from mesa.discrete_space import OrthogonalVonNeumannGrid
@@ -302,7 +301,7 @@ class HousingModel(mesa.Model):
 
         # Feasibility
         if agent_type == "household":
-            payment = self.credit.monthly_mortgage_payment(price, ltv, r)
+            payment = self.credit.monthly_mortgage_payment(price, ltv)
             income_ok = payment <= self.credit.dti_limit * agent.income
             if not income_ok:
                 return False
@@ -341,24 +340,24 @@ class HousingModel(mesa.Model):
         )
         institutions = [a for a in self.agents if isinstance(a, InstitutionalAgent)]
 
-        # Ownership
-        props_sorted = sorted(self.properties, key=lambda p: p.quality, reverse=True)
-        available = list(props_sorted)
-        n_properties = len(available)
+        # Ownership — random allocation per NewPlan §17
+        available = list(self.properties)
+        self.rng.shuffle(available)
 
-        while available and (available / n_properties <= cfg.sim.target_household_share):
-            hh = random.choice(households)
-            zone_match = [p for p in available if p.zone == hh.home_zone]
-            prop = zone_match[0]
-            is_home = hh.home_property == None
+        self.rng.shuffle(households)
+        for hh in households:
+            if not available:
+                break
+            zone_props = [p for p in available if p.zone == hh.home_zone]
+            if not zone_props:
+                continue
+            prop = zone_props[0]
             if self._assign_property_to_agent(
-                hh, prop, is_home=is_home, r=None, agent_type="household"
+                hh, prop, is_home=True, r=None, agent_type="household"
             ):
                 available.remove(prop)
-            # else: prop stays in pool, repeat
 
-        for k, prop in enumerate(available):
-            available.remove(prop)
+        for k, prop in enumerate(list(available)):
             inst = institutions[k % len(institutions)]
             if self._assign_property_to_agent(
                 inst, prop, is_home=False, r=None, agent_type="institution"
