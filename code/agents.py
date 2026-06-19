@@ -211,84 +211,69 @@ class HouseholdAgent(mesa.Agent):
 
     def choose_action(self, purchase_candidates):
         """
-        Choose action via multinomial logit.
+        Choose per-property action for each owned property plus one agent-level action.
 
-        Returns one of: 'buy', 'buy-to-let', 'rent', 'hold', 'sell', 'rent_out'
+        Returns dict: {property_id: 'hold'|'sell'|'rent_out', '__agent__': 'buy'|'buy-to-let'|'rent'}
         """
+        result = {}
         credit = self.model.credit
-        scores = []
+        rent_estimate = self._local_rent_estimate()
 
-        # BUY (primary residence) — only if credit-feasible candidates exist
+        # --- Per-property actions: hold / sell / rent_out ---
+        for pid in list(self.owned_properties):
+            prop = self.model._property_map[pid]
+            pp_scores = [("hold", self.expected_price_growth), ("sell", -self.expected_price_growth)]
+            if pid == self.home_property:
+                rent_out_score = (
+                    rent_estimate * 12
+                    / max(prop.estimated_value, 1.0)
+                    + self.expected_rent_growth
+                )
+                pp_scores.append(("rent_out", rent_out_score))
+            probs = _logit_probs(pp_scores)
+            acts, wts = zip(*probs)
+            result[pid] = self.model.random.choices(list(acts), weights=list(wts), k=1)[0]
+
+        # --- Agent-level action: buy / buy-to-let / rent ---
         affordable = [
-            p
-            for p in purchase_candidates
+            p for p in purchase_candidates
             if credit.max_affordable_price(self.cash, self.income) >= p.estimated_value
         ]
-        if affordable:
-            best_wtp = max(
-                self._wtp_for_property(p, credit, purpose="buy")
-                for p in affordable
-            )
-            scores.append(("buy", best_wtp))
-        else:
-            scores.append(("buy", -np.inf))
 
-        # BUY-TO-LET (investment) — same candidate pool, investor WTP
+        agent_scores = []
         if affordable:
-            best_btl_wtp = max(
-                self._wtp_for_property(p, credit, purpose="buy-to-let")
-                for p in affordable
-            )
-            scores.append(("buy-to-let", best_btl_wtp))
+            best_wtp = max(self._wtp_for_property(p, credit, purpose="buy") for p in affordable)
+            agent_scores.append(("buy", best_wtp))
+            best_btl = max(self._wtp_for_property(p, credit, purpose="buy-to-let") for p in affordable)
+            agent_scores.append(("buy-to-let", best_btl))
         else:
-            scores.append(("buy-to-let", -np.inf))
+            agent_scores.append(("buy", -np.inf))
+            agent_scores.append(("buy-to-let", -np.inf))
 
-        # RENT — score depends on housing status
-        rent_estimate = self._local_rent_estimate()
         if self.home_property is not None and self.is_renter:
             current_prop = self.model._property_map.get(self.home_property)
             if current_prop is not None and current_prop.current_rent is not None:
                 current_burden = current_prop.current_rent / max(self.income, 1.0)
                 market_burden = rent_estimate / max(self.income, 1.0)
-                savings = current_burden - market_burden
-                moving_cost = 0.05
-                rent_score = savings - moving_cost
+                rent_score = (current_burden - market_burden) - 0.05
             else:
                 rent_score = -rent_estimate / max(self.income, 1.0)
         else:
-            monthly_burden = rent_estimate / max(self.income, 1.0)
-            rent_score = -monthly_burden
-        scores.append(("rent", rent_score))
+            rent_score = -rent_estimate / max(self.income, 1.0)
+        agent_scores.append(("rent", rent_score))
 
-        # HOLD / SELL / RENT_OUT — only for owners
-        if self.owned_properties:
-            hold_score = self.expected_price_growth
-            scores.append(("hold", hold_score))
-
-            sell_score = -self.expected_price_growth
-            scores.append(("sell", sell_score))
-
-        # RENT_OUT home — only if owner-occupier
-        if self.is_owner_occupier:
-            rent_out_score = (
-                rent_estimate
-                * 12
-                / max(self.model._property_map[self.home_property].estimated_value, 1.0)
-                + self.expected_rent_growth
-            )
-            scores.append(("rent_out", rent_out_score))
-
-        # Normalize scores so all actions live on comparable scale (NewPlan §31)
         max_affordable = credit.max_affordable_price(self.cash, self.income)
         normalized = []
-        for label, score in scores:
+        for label, score in agent_scores:
             if label in ("buy", "buy-to-let") and max_affordable > 0:
                 normalized.append((label, min(score / max_affordable, 1.0)))
             else:
                 normalized.append((label, score))
         probs = _logit_probs(normalized)
-        actions, weights = zip(*probs)
-        return self.model.random.choices(list(actions), weights=list(weights), k=1)[0]
+        acts, wts = zip(*probs)
+        result["__agent__"] = self.model.random.choices(list(acts), weights=list(wts), k=1)[0]
+
+        return result
 
     # ------------------------------------------------------------------
     # Stage 2: Property selection
@@ -650,12 +635,18 @@ class InstitutionalAgent(mesa.Agent):
                 market_value=p.estimated_value, risk_free_rate=self.funding_rate,
             )
 
-        values = {
-            "acquire": max((_acquire(p) for p in feasible), default=float("-inf")),
-            "hold":    sum(_hold(p) for p in owned) if owned else float("-inf"),
-            "sell":    max((-_hold(p) for p in owned), default=float("-inf")),
-        }
-        return utility.logit_choice(values, self.model.rng)
+        result = {}
+
+        for pid in self.portfolio:
+            prop = self.model._property_map[pid]
+            pp_values = {"hold": _hold(prop), "sell": -_hold(prop)}
+            result[pid] = utility.logit_choice(pp_values, self.model.rng)
+
+        acquire_v = max((_acquire(p) for p in feasible), default=float("-inf"))
+        agent_values = {"acquire": acquire_v, "none": 0.0}
+        result["__agent__"] = utility.logit_choice(agent_values, self.model.rng)
+
+        return result
 
     # ------------------------------------------------------------------
     # Stage 2: Property selection

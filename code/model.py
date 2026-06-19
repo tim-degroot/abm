@@ -592,21 +592,27 @@ class HousingModel(mesa.Model):
 
     def _list_properties(self, ownership_market, rental_market, actions, distress_sales):
         """
-        Owners decide each period whether to sell, rent out, or hold.
+        Per-property action: list for sale, list for rent, or hold.
+
+        1. All currently listed-for-rent properties are registered on the rental
+           market (preserves auto-listings from tenant departures).
+        2. Ownership entries are managed per-property: only 'sell' clears
+           listed_for_sale and lists the property.
+        3. 'rent_out' on a vacant property adds a rental listing.
         """
         for prop in self.properties:
+            prop.listed_for_sale = False
             if prop.listed_for_rent:
                 rental_market.list_property(prop.id, prop.owner_id, 0.0)
                 self._debug_counts["rental_listed"] += 1
 
         for agent in self.agents:
-            action = actions.get(agent.unique_id)
             forced_sales = distress_sales.get(agent.unique_id, set())
-
+            agent_actions = actions.get(agent.unique_id, {})
             owned = getattr(agent, "owned_properties", None) or getattr(agent, "portfolio", set())
+
             for pid in list(owned):
                 prop = self._property_map[pid]
-                prop.listed_for_sale = False
 
                 if pid in forced_sales:
                     ownership_market.list_property(pid, agent.unique_id, 0.0)
@@ -614,33 +620,24 @@ class HousingModel(mesa.Model):
                     self._debug_counts["ownership_listed"] += 1
                     continue
 
-                if hasattr(agent, "home_property") and pid == agent.home_property:
-                    if action == "sell":
-                        ownership_market.list_property(pid, agent.unique_id, 0.0)
-                        prop.listed_for_sale = True
-                        self._debug_counts["ownership_listed"] += 1
-                    elif action == "rent_out":
-                        if prop.occupant_id is None:
-                            rental_market.list_property(pid, agent.unique_id, 0.0)
-                            prop.listed_for_rent = True
-                            self._debug_counts["rental_listed"] += 1
-                else:
-                    if action == "sell":
-                        ownership_market.list_property(pid, agent.unique_id, 0.0)
-                        prop.listed_for_sale = True
-                        self._debug_counts["ownership_listed"] += 1
-                    else:
-                        if prop.occupant_id is None:
-                            rental_market.list_property(pid, agent.unique_id, 0.0)
-                            prop.listed_for_rent = True
-                            self._debug_counts["rental_listed"] += 1
+                pp_action = agent_actions.get(pid, "hold")
+
+                if pp_action == "sell":
+                    ownership_market.list_property(pid, agent.unique_id, 0.0)
+                    prop.listed_for_sale = True
+                    self._debug_counts["ownership_listed"] += 1
+                elif pp_action == "rent_out":
+                    if not prop.listed_for_rent:
+                        prop.listed_for_rent = True
+                        rental_market.list_property(pid, agent.unique_id, 0.0)
+                        self._debug_counts["rental_listed"] += 1
 
     def _submit_bids(self, ownership_market, rental_market, actions):
         """Buyers and renters submit bids."""
         submitted_pairs = set()
         for agent in self.agents:
             purchase_candidates = self._get_purchase_candidates(agent)
-            action = actions.get(agent.unique_id)
+            action = actions.get(agent.unique_id, {}).get("__agent__")
 
             if action in ("buy", "buy-to-let", "acquire"):
                 affordable = [
