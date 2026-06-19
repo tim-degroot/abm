@@ -642,7 +642,7 @@ class InstitutionalAgent(mesa.Agent):
             "hold":    sum(_hold(p) for p in owned) if owned else float("-inf"),
             "sell":    max((-_hold(p) for p in owned), default=float("-inf")),
         }
-        return utility.logit_choice(values, self.model.config.agent.beta, self.model.random)
+        return utility.logit_choice(values, self.model.rng)
 
     # ------------------------------------------------------------------
     # Stage 2: Property selection
@@ -657,7 +657,7 @@ class InstitutionalAgent(mesa.Agent):
             rental_candidates=(),
         )
         values = {p: utility.property_value(self, p, ctx) for p in candidates}
-        return utility.logit_choice(values, self.model.config.agent.beta, self.model.random)
+        return utility.logit_choice(values, self.model.rng)
 
     # ------------------------------------------------------------------
     # Stage 3: Bid formation
@@ -672,7 +672,7 @@ class InstitutionalAgent(mesa.Agent):
 
     def acquire_property(self, prop, price, origination_ltv=None):
         if origination_ltv is None:
-            ltv = self.model.config.agent.inst_ltv
+            ltv = self.model.config.credit.inst_ltv
         else:
             ltv = origination_ltv
 

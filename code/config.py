@@ -48,6 +48,7 @@ class AgentInitConfig(BaseModel):
     loss_aversion: float = Field(1.30, ge=0)  ###
 
 
+
 class CreditConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     mortgage_rate: float = Field(0.0025, ge=0)
@@ -80,6 +81,7 @@ class MarketConfig(BaseModel):
     min_tenancy: int = Field(12, ge=0)
     early_exit_prob: float = Field(0.05, ge=0, le=1)
     normal_exit_prob: float = Field(0.2, ge=0, le=1)
+    initial_rent_yield: float = Field(0.00333, gt=0)
 
 
 class MacroConfig(BaseModel):  # Need to add credit conditions

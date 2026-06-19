@@ -310,7 +310,7 @@ def property_value(agent, prop, ctx: DecisionContext) -> float:
     return agent._wtp_for_property(prop, ctx.avg_market_rent)
 
 
-def logit_choice(values: Mapping[Hashable, float], beta: float, rng) -> Hashable:
+def logit_choice(values: Mapping[Hashable, float], rng, beta: float = 1.0) -> Hashable:
     """Picks one option probabilistically. Higher value = more likely to be chosen.
     Pr(k) = exp(β·V_k) / Σ exp(β·V_k'). Infeasible options get V = −inf → zero probability.
     """
