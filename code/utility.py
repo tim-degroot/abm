@@ -13,6 +13,7 @@ Sections:
 """
 
 import numpy as np
+import math
 from typing import Hashable, Mapping
 from dataclasses import dataclass
 
@@ -180,7 +181,11 @@ def crra(delta_v: float, gamma: float) -> float:
     """Applies risk aversion to a surplus value.
     U = sign(ΔV)·|ΔV|^(1−γ) / (1−γ).
     γ=0 returns ΔV unchanged (risk-neutral, used for institutions).
+    
     Returns -inf for non-positive surplus (infeasible action).
+    IS THIS TOO STRICT? CANT SURPLUS BE NEGATIVE?
+    Household may be able to buy a property but rationally prefer renting. 
+    The purchase is feasible, but unattractive
     """
     return crra_utility(delta_v, gamma)
 
@@ -236,6 +241,55 @@ def apply_loss_aversion(
     """
     penalty = loss_aversion * max(purchase_anchor - sale_price, 0.0)
     return sell_value - penalty
+
+
+def risk_adjusted_growth(
+    expected_growth: float,
+    expected_volatility: float,
+    risk_loading: float,
+) -> float:
+    """Reduced form household risk
+
+    adjusted_growth = expected_growth - risk_loading * expected_volatility
+
+    g_RA = E[g] - gamma_i * sigma_hat
+
+    where:
+
+    g_RA = Risk-adjusted expected growth
+
+    E[g] = The household's expected property-price growth. Point forecast or mean of a distribution. (self.expected_price_growth)
+
+    gamma_i = The household specific risk loading. (self.risk_aversion)
+
+    sigma_hat = The household's estimated volatility of future property-price growth. 
+                standard deviation of possible growth outcomes (self.model.config.expectations.household_price_growth_volatility).
+                household_price_growth_volatility = perceived uncertainty penalty households apply to expected growth
+                household_noise_sd != household_price_growth_volatility. 1. noise in the household's price forecasts 2. percieved volatility of actual price growth outcomes
+    
+    ToDo:
+    1. add helper to agent to get parameters
+    2. pass risk adjusted capital gain into household WTP should downstream into buy action, buy to let, propery selection, submitted bids
+    3. change hold score to use risk adjusted growth instead of expected growth
+    4. remove crra(), crra_utility(), household_action_value()
+    """
+    values = {
+        "expected_growth": expected_growth,
+        "expected_volatility": expected_volatility,
+        "risk_loading": risk_loading,
+    }
+
+    for name, value in values.items():
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must be finite")
+
+    if expected_volatility < 0.0:
+        raise ValueError("expected_volatility must be non-negative")
+
+    if risk_loading < 0.0:
+        raise ValueError("risk_loading must be non-negative")
+
+    return expected_growth - risk_loading * expected_volatility
 
 
 # ---------------------------------------------------------------------------
