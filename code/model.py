@@ -570,12 +570,8 @@ class HousingModel(mesa.Model):
         """
         Update estimated_value on all properties, giving agents a continuously updated balance sheet.
         """
-        if len(self._price_history) >= 2:  # dig into price history, may not match requirements here
-            growth = (
-                self.mean_price_history[-1] - self.mean_price_history[0]
-            ) / self.mean_price_history[0]
-        else:
-            growth = 0.0
+        growth = price_growth_signal(self._price_history, window=2)
+        growth = 0.0 if growth is None else growth
 
         for prop in self.properties:
             prop.estimated_value = prop.estimated_value * (1.0 + growth)
