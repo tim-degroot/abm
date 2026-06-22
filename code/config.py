@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field
 
-
 class SimConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     n_households: int = Field(250, gt=0)
@@ -12,16 +11,14 @@ class SimConfig(BaseModel):
     n_steps: int = Field(720, gt=0)
     seed: int = 42
 
-
 class SpatialConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     grid_rows: int = Field(5, ge=3)
     grid_cols: int = Field(5, ge=3)
 
     @property
-    def n_zones(self) -> int:  ###
+    def n_zones(self) -> int:
         return self.grid_rows * self.grid_cols
-
 
 class PropertyInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -30,7 +27,6 @@ class PropertyInitConfig(BaseModel):
     init_base_price: float = Field(200_000.0, gt=0)
     init_price_quality_sensitivity: float = Field(50_000.0, ge=0)
     init_ownership_prob: float = Field(0.65, ge=0, le=1)
-
 
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -48,7 +44,6 @@ class AgentInitConfig(BaseModel):
     inst_min_yield: float = Field(0.04, ge=0)
     loss_aversion: float = Field(1.30, ge=0)
 
-
 class CreditConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     mortgage_rate: float = Field(0.0025, ge=0)
@@ -60,13 +55,10 @@ class CreditConfig(BaseModel):
     inst_funding_rate: float = Field(0.0045, ge=0)
     inst_ltv: float = Field(0.60, ge=0, le=1)
 
-
 class ValuationConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     quality_sensitivity: float = Field(0.3, ge=0)
     quality_value_scale: float = Field(2000.0, ge=0)
-    max_rent_income_ratio: float = Field(0.35, ge=0, le=1)
-
 
 class ExpectationsConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -75,14 +67,13 @@ class ExpectationsConfig(BaseModel):
     inst_noise_sd: float = Field(0.00072, ge=0)
     household_noise_sd: float = Field(0.00144, ge=0)
 
-
 class MarketConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     min_tenancy: int = Field(12, ge=0)
     early_exit_prob: float = Field(0.05, ge=0, le=1)
     normal_exit_prob: float = Field(0.2, ge=0, le=1)
 
-class MacroConfig(BaseModel):  # Need to add credit conditions
+class MacroConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     initial_state: Literal["Boom", "Neutral", "Recession"] = "Neutral"
     boom_mean: float = 0.0025
@@ -91,7 +82,6 @@ class MacroConfig(BaseModel):  # Need to add credit conditions
     neutral_sd: float = Field(0.00289, ge=0)
     recession_mean: float = -0.001667
     recession_sd: float = Field(0.00866, ge=0)
-
 
 class Config(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -104,7 +94,6 @@ class Config(BaseModel):
     expectations: ExpectationsConfig = ExpectationsConfig()
     macro: MacroConfig = MacroConfig()
     market: MarketConfig = MarketConfig()
-
 
 __all__ = [
     "Config",

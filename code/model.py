@@ -338,7 +338,7 @@ class HousingModel(mesa.Model):
         )
         institutions = [a for a in self.agents if isinstance(a, InstitutionalAgent)]
 
-        # Ownership — random allocation per NewPlan §17
+        # Ownership — random allocation
         available = list(self.properties)
         self.rng.shuffle(available)
 
@@ -703,10 +703,6 @@ class HousingModel(mesa.Model):
 
     def _get_purchase_candidates(self, agent, listed_only=True):
         """Households search locally, institutions see all properties.
-
-        When listed_only=True (default), filters to properties currently listed
-        for sale. Set listed_only=False for Stage 1 action choice, which
-        evaluates all feasible properties (NewPlan §10).
         """
         if isinstance(agent, InstitutionalAgent):
             candidates = [p for p in self.properties if p.owner_id != agent.unique_id]
@@ -760,15 +756,6 @@ class HousingModel(mesa.Model):
     def _get_rental_candidates(self, agent):
         """
         Listed vacant rentals the agent can afford to bid on.
-
-        An UNHOUSED household (no owned home AND no active lease, i.e.
-        home_property is None) is not tied to any neighbourhood, so it searches
-        the ENTIRE market — guaranteeing it is always an active rental searcher
-        and can re-house whenever any rental supply exists. This is what stops
-        agents who lose their home (distress sale, lease non-renewal) from
-        silently dropping out of the market because their home zone happens to
-        have no vacancies. A housed renter looking to move stays restricted to
-        its local search zones.
         """
         listed = [
             p

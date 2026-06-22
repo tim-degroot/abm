@@ -113,7 +113,7 @@ def delta_v_hold(
     pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
     proceeds = market_value - ltv * price
     if proceeds < 0.0:
-        return pnl  # negative equity → sale crystallises a loss, so hold is always better
+        return pnl
     return pnl - risk_free_rate * proceeds
 
 
@@ -166,19 +166,6 @@ def institutional_action_value(expected_profit: float) -> float:
     """Utility of an action for an institution.
     """
     return expected_profit
-
-
-def apply_loss_aversion(
-    sell_value: float,
-    sale_price: float,
-    purchase_anchor: float,
-    loss_aversion: float,
-) -> float:
-    """If a household sells a property for less than they originally paid, the
-    perceived value of that sale is reduced by a penalty proportional to the loss.
-    """
-    penalty = loss_aversion * max(purchase_anchor - sale_price, 0.0)
-    return sell_value - penalty
 
 
 def risk_adjusted_growth(

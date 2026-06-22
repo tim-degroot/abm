@@ -32,11 +32,6 @@ class RentalTransaction:
 class BaseMarket:
     """
     Vickrey auction for a single step.
-    Usage:
-        market = BaseMarket(step)
-        market.list_property(pid, owner_id, reservation)
-        market.submit_bid(pid, bidder_id, amount, ...)
-        txns = market.resolve()
     """
 
     def __init__(self, step: int):
