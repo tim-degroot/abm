@@ -13,32 +13,29 @@
 
 Total runs = $N \times (2k + 2)$, where $k$ = number of parameters, $N$ = base sample size.
 
-- $k=6$, $N=64$ → 896 runs (~1–2 hrs on 8 cores)
-- $k=6$, $N=128$ → 1792 runs (~2–4 hrs)
+- $k=5$, $N=64$ → 768 runs (~1–2 hrs on 8 cores)
+- $k=5$, $N=128$ → 1536 runs (~2–4 hrs)
 - To add a parameter: add one entry to `parameters:` list in config, re-run (total runs grows by $2N$ per param)
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `code/sa_config.yaml` | **All tunable variables** — N, steps, parameters, responses, cores, output paths |
-| `code/sensitivity.py` | Harness: sampling → parallel batch run → Sobol analysis → plot |
-| `code/config.py` | Added `spatial.search_radius` field (exposes interaction range) |
-| `code/model.py` | Updated `_build_zone_adjacency` to use `search_radius` with configurable Manhattan distance |
+| `sensitivity/config.yaml` | **All tunable variables** — N, steps, parameters, responses, cores, output paths |
+| `sensitivity/__main__.py` | Harness: sampling → parallel batch run → Sobol analysis → plot |
 | `results/sa/sobol_indices.png` | Grouped bar chart (1st + total order per response) |
 | `results/sa/sobol_results.csv` | Raw parameter values + scalar responses per run |
 | `results/sa/sobol_indices.csv` | Sobol indices table (S1, S1_conf, ST, ST_conf per param per response) |
 
-## Parameters (k=6)
+## Parameters (k=5)
 
 | # | Parameter | Config path | Default | Distribution | Range | Mechanism |
 |---|---|---|---|---|---|---|
 | 1 | Agent count | `sim.n_households` | 100 | int | 100–300 | Market tightness — more buyers → competition, price growth |
-| 2 | Search radius | `spatial.search_radius` | 1 (von Neumann) | int | 0–3 | Wider search → more properties bid on → price convergence |
-| 3 | Mortgage rate | `credit.mortgage_rate` | 0.0025 (3% APR) | log-uniform | 0.001–0.01 (1.2–12.7% APR) | Higher rate → higher monthly payment → lower WTP |
-| 4 | LTV limit | `credit.ltv_limit` | 0.85 | uniform | 0.60–0.95 | Deposit constraint → looser → more buyers, higher prices |
-| 5 | Inst required return | `agent_init.inst_required_return` | 0.004 | log-uniform | 0.001–0.01 | Lower → institutions buy aggressively, market dominance |
-| 6 | Loss aversion λ | `agent_init.loss_aversion` | 1.30 | uniform | 0–5 | Higher → sellers hold out → volume collapse, price stickiness |
+| 2 | Mortgage rate | `credit.mortgage_rate` | 0.0025 (3% APR) | log-uniform | 0.001–0.01 (1.2–12.7% APR) | Higher rate → higher monthly payment → lower WTP |
+| 3 | LTV limit | `credit.ltv_limit` | 0.85 | uniform | 0.60–0.95 | Deposit constraint → looser → more buyers, higher prices |
+| 4 | Inst required return | `agent_init.inst_required_return` | 0.004 | log-uniform | 0.001–0.01 | Lower → institutions buy aggressively, market dominance |
+| 5 | Loss aversion λ | `agent_init.loss_aversion` | 1.30 | uniform | 0–5 | Higher → sellers hold out → volume collapse, price stickiness |
 
 ## Response Functions
 
@@ -82,8 +79,8 @@ Every tunable is in this one file:
 
 ```bash
 # Full SA (default N=64, 720 steps, all cores)
-uv run python -m code.sensitivity
+uv run python -m sensitivity
 
-# Quick smoke test (edit sa_config.yaml → steps: 24)
-uv run python -m code.sensitivity
+# Quick smoke test (edit sensitivity/config.yaml → steps: 24)
+uv run python -m sensitivity
 ```

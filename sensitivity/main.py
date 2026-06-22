@@ -1,12 +1,12 @@
 """Sobol global sensitivity analysis harness.
 
 Usage:
-    uv run python -m sensitivity.main
-
-Reads sa_config.yaml (in the code/ directory) for all configuration.
+    uv run sensitivity/main.py
+    uv run python -m sensitivity
 """
 
 import os
+import sys as _sys
 
 import yaml
 import numpy as np
@@ -19,7 +19,14 @@ from SALib.sample import sobol as sobol_sample
 from SALib.analyze import sobol as sobol_analyze
 
 
-_CONFIG_PATH = "sensitivity/config.yaml"
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_CODE_DIR = os.path.join(_PROJECT_ROOT, "code")
+for _p in (_PROJECT_ROOT, _CODE_DIR):
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+
+_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "sensitivity", "config.yaml")
+
 
 def load_config():
     with open(_CONFIG_PATH) as f:
@@ -69,7 +76,6 @@ def build_config(params, sa_cfg):
         if section not in section_overrides:
             section_overrides[section] = {}
         section_overrides[section][field] = params[p["name"]]
-    # Override steps from sa_config.yaml
     steps = sa_cfg.get("steps", cfg.sim.n_steps)
     if "sim" not in section_overrides:
         section_overrides["sim"] = {}
@@ -144,13 +150,13 @@ def run_single(args):
 def plot_sobol(sobol_df, sa_cfg, out_dir):
     """Grouped bar chart: 1st and total order per response."""
     responses = [r["name"] for r in sa_cfg["responses"]]
-    params = [p["name"] for p in sa_cfg["parameters"]]
+    param_names = [p["name"] for p in sa_cfg["parameters"]]
     n = len(responses)
 
     fig, axes = plt.subplots(1, n, figsize=(5 * n, 5), squeeze=False)
     axes = axes[0]
 
-    x = np.arange(len(params))
+    x = np.arange(len(param_names))
     width = 0.35
 
     for ax, resp in zip(axes, responses):
@@ -166,7 +172,7 @@ def plot_sobol(sobol_df, sa_cfg, out_dir):
         )
         ax.axhline(0, color="grey", linewidth=0.5)
         ax.set_xticks(x)
-        ax.set_xticklabels(params, rotation=30, ha="right")
+        ax.set_xticklabels(param_names, rotation=30, ha="right")
         ax.set_title(resp)
         ax.legend(fontsize="small")
 
@@ -211,7 +217,6 @@ def main():
     full_df.to_csv(out_csv, index=False)
     print(f"Saved: {out_csv}")
 
-    # Sobol indices per response
     sobol_rows = []
     for r in sa_cfg["responses"]:
         name = r["name"]

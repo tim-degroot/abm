@@ -12,3 +12,9 @@ uv run run.py
 - **Python:** 3.13+
 - **Package Manager:** [uv](https://docs.astral.sh/uv/)
 - **Dependencies:** Managed via pyproject.toml (includes MESA)
+
+## Sensitivity Analysis
+
+```bash
+uv run python -m sensitivity
+```
