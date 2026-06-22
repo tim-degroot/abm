@@ -94,12 +94,8 @@ def delta_v_acquire(
     price: float,
     risk_free_rate: float,
 ) -> float:
-<<<<<<< HEAD
-    """Surplus from buying a property over investing the same cash at the risk-free rate.
-=======
     """Surplus from buying a property over the risk-free return on the equity deployed.
     ΔV_acquire = E[Π_I] − r_f·(1−L)·p
->>>>>>> 35069bc8f4117bf27b5458021b25a7653b5596fc
     """
     pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
     equity = (1.0 - ltv) * price
