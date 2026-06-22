@@ -1,14 +1,7 @@
 """
 Valuation: willingness-to-pay (WTP) formulas.
 
-Maximum WTP is the price at which an agent's surplus over its outside
-option is zero.
-
-Owner-occupier:
-  p_max = (q_k + E[Δp] - V_outside) / (r_m * L)
-
-Private landlord / institutional investor:
-  p_max = (R - φ + E[Δp]) / (r_f * L)
+Maximum WTP is the price at which an agent's surplus over their outside option is zero.
 """
 
 

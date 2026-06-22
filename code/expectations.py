@@ -1,10 +1,8 @@
 """
 Expectations: adaptive belief formation and price forecasting.
 
-Two-tier architecture:
-  - Households: simple adaptive (EWMA) extrapolation of local signals.
+  - Households: simple adaptive (EWMA) extrapolation of local signals
   - Institutions: linear regression on market-wide data (rolling window OLS)
-    to forecast 1-period-ahead price changes.
 """
 
 import numpy as np
