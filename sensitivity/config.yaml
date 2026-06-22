@@ -9,7 +9,7 @@ sobol:
   N: 4                     # base sample size (total runs = N × (2k+2))
   seed: 42                 # rng seed for Saltelli sequence
 
-steps: 720                 # simulation length (set to e.g. 24 for quick smoke tests)
+steps: 240                 # simulation length (set to e.g. 24 for quick smoke tests)
 
 
 parameters:
@@ -48,7 +48,7 @@ responses:
   - name: mean_price
     metric: avg_sale_price
     reduce: nanmean
-    tail: 120
+    # tail: 120
     description: "Mean sale price over last 120 steps"
 
   - name: price_volatility

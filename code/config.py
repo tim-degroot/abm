@@ -22,15 +22,15 @@ class SpatialConfig(BaseModel):
 
 class PropertyInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    zone_quality_sd: float = Field(0.5, ge=0)
-    property_residual_sd: float = Field(0.5, ge=0)
+    zone_quality_sd: float = Field(0.8, ge=0)
+    property_residual_sd: float = Field(0.3, ge=0)
     init_base_price: float = Field(200_000.0, gt=0)
     init_price_quality_sensitivity: float = Field(50_000.0, ge=0)
-    init_ownership_prob: float = Field(0.65, ge=0, le=1)
+    init_ownership_prob: float = Field(0.5, ge=0, le=1)
 
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    income_mean: float = Field(35_000.0, gt=0)
+    income_mean: float = Field(30_000.0, gt=0)
     income_sigma: float = Field(0.5, ge=0)
     wealth_income_mult_low: float = Field(0, ge=0)
     wealth_income_mult_high: float = Field(25.0, ge=0)
@@ -38,17 +38,17 @@ class AgentInitConfig(BaseModel):
     ltv_dist_high: float = Field(0.85, ge=0, le=1)
     risk_aversion_mu: float = 1.0
     risk_aversion_sigma: float = Field(0.5, ge=0)
-    inst_cash_low: float = Field(5_000_000.0, ge=0)
-    inst_cash_high: float = Field(20_000_000.0, ge=0)
-    inst_required_return: float = Field(0.004, ge=0)
+    inst_cash_low: float = Field(2_000_000.0, ge=0)
+    inst_cash_high: float = Field(10_000_000.0, ge=0)
+    inst_required_return: float = Field(0.0015, ge=0) # 1.8% APR
     inst_min_yield: float = Field(0.04, ge=0)
     loss_aversion: float = Field(1.30, ge=0)
 
 class CreditConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    mortgage_rate: float = Field(0.0025, ge=0)
-    ltv_limit: float = Field(0.85, ge=0, le=1)
-    dti_limit: float = Field(0.35, ge=0, le=1)
+    mortgage_rate: float = Field(0.00308, ge=0) # 3.7% APR
+    ltv_limit: float = Field(0.9, ge=0, le=1)
+    dti_limit: float = Field(0.33, ge=0, le=1)
     loan_term_months: int = Field(360, gt=0)
     btl_funding_rate: float = Field(0.005, ge=0)
     btl_ltv: float = Field(0.75, ge=0, le=1)
@@ -64,8 +64,8 @@ class ExpectationsConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     init_price_growth: float = 0.001667
     init_rent_growth: float = 0.001667
-    inst_noise_sd: float = Field(0.00072, ge=0)
-    household_noise_sd: float = Field(0.00144, ge=0)
+    inst_noise_sd: float = Field(0.0003, ge=0)
+    household_noise_sd: float = Field(0.0006, ge=0)
 
 class MarketConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
