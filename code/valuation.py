@@ -7,68 +7,137 @@ Maximum WTP is the price at which an agent's surplus over their outside option i
 
 def household_wtp(
     quality_value: float,
-    capital_gain: float,
     outside_option_value: float,
     mortgage_rate: float,
-    ltv: float,
+    expected_growth: float,
     credit_ceiling: float,
 ) -> float:
     """Owner-occupier WTP.
 
+    Perpetuity valuation: the price P that satisfies
+        q_k + g·P - r_m·P - V_out = 0  ⇒  P = (q_k - V_out) / (r_m - g)
+
     Parameters
     ----------
     quality_value        : q_k, monthly value of housing consumption
-    capital_gain         : E[Δp], expected monthly £ appreciation
     outside_option_value : V_outside, monthly value of the rental alternative
     mortgage_rate        : r_m (monthly)
-    ltv                  : L, loan-to-value ratio
+    expected_growth      : g, expected monthly price growth rate
     credit_ceiling       : max affordable price from deposit/DTI constraints
 
     Returns
     -------
     p_max clipped to [0, credit_ceiling].
     """
-    numerator = quality_value + capital_gain - outside_option_value
-    denominator = mortgage_rate * ltv
+    numerator = quality_value - outside_option_value
+    denominator = mortgage_rate - expected_growth
     if denominator <= 0.0:
-        return 0.0
+        return credit_ceiling
     p_max = numerator / denominator
     return max(0.0, min(p_max, credit_ceiling))
 
 
 def investor_wtp(
     net_rent: float,
-    capital_gain: float,
     funding_rate: float,
-    ltv: float,
+    expected_growth: float,
 ) -> float:
     """Private landlord or institutional investor WTP.
 
+    Perpetuity valuation:
+        P = net_rent / (r_f - g)
+
     Parameters
     ----------
-    net_rent     : R - φ, expected monthly net rent
-    capital_gain : E[Δp], expected monthly £ appreciation
-    funding_rate : r_f (or r_f^BTL, monthly)
-    ltv          : L, loan-to-value ratio
+    net_rent        : R - φ, expected monthly net rent
+    funding_rate    : r_f (or r_f^BTL, monthly)
+    expected_growth : g, expected monthly price growth rate
 
     Returns
     -------
-    p_max (>= 0). Credit constraints are applied by the caller.
+    p_max (≥ 0). Credit constraints are applied by the caller.
     """
-    numerator = net_rent + capital_gain
-    denominator = funding_rate * ltv
+    numerator = net_rent
+    denominator = funding_rate - expected_growth
     if denominator <= 0.0:
-        return 0.0
-    p_max = numerator / denominator
-    return max(0.0, p_max)
+        return float("inf")
+    return max(0.0, numerator / denominator)
 
 
-def household_max_rent(income: float, max_rent_income_ratio: float) -> float:
-    """Maximum monthly rent bid from the affordability ceiling.
-    Income is annual; ratio is monthly-to-income."""
+def household_rent_wtp(
+    quality_value: float,
+    base_rent: float,
+    income: float,
+    max_rent_income_ratio: float,
+) -> float:
+    """Maximum monthly rent a household is willing to pay for a property.
+
+    The household will pay up to the quality premium plus the baseline
+    market rent, subject to an affordability ceiling.
+
+    Parameters
+    ----------
+    quality_value         : q_k, monthly value of this property's quality
+    base_rent             : outside-option monthly rent for a baseline unit
+    income                : annual household income
+    max_rent_income_ratio : maximum fraction of monthly income for rent
+
+    Returns
+    -------
+    Monthly rent bid clipped to [0, affordability ceiling].
+    """
     if income <= 0.0:
         return 0.0
-    return (income / 12.0) * max_rent_income_ratio
+    wtp = quality_value + base_rent
+    ceiling = (income / 12.0) * max_rent_income_ratio
+    return max(0.0, min(wtp, ceiling))
+
+
+def household_buy_wtp(
+    quality: float,
+    quality_value_scale: float,
+    base_rent: float,
+    mortgage_rate: float,
+    expected_growth: float,
+    credit_ceiling: float,
+) -> float:
+    """WTP for a household buying a property to occupy."""
+    quality_value = quality_value_scale * quality
+    return household_wtp(quality_value, base_rent, mortgage_rate, expected_growth, credit_ceiling)
+
+
+def household_btl_wtp(
+    quality: float,
+    quality_sensitivity: float,
+    base_rent: float,
+    funding_rate: float,
+    expected_growth: float,
+    credit_ceiling: float,
+) -> float:
+    """WTP for a household buying a property to let, capped by credit."""
+    net_rent = estimate_market_rent(quality, base_rent, quality_sensitivity)
+    wtp = investor_wtp(net_rent, funding_rate, expected_growth)
+    return min(wtp, credit_ceiling)
+
+
+def institutional_wtp(
+    quality: float,
+    quality_sensitivity: float,
+    base_rent: float,
+    funding_rate: float,
+    required_return: float,
+    expected_growth: float,
+    cash: float,
+    ltv: float,
+) -> float:
+    """WTP for an institutional investor, capped by equity."""
+    net_rent = estimate_market_rent(quality, base_rent, quality_sensitivity)
+    effective_rate = funding_rate + required_return
+    wtp = investor_wtp(net_rent, effective_rate, expected_growth)
+    if ltv < 1.0:
+        max_price = cash / max(1e-9, 1.0 - ltv)
+        wtp = min(wtp, max_price)
+    return wtp
 
 
 def estimate_market_rent(

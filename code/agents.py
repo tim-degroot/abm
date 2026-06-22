@@ -14,9 +14,10 @@ from expectations import (
     institutional_rent_growth_signal,
 )
 from valuation import (
-    household_wtp,
-    investor_wtp,
-    household_max_rent,
+    household_buy_wtp,
+    household_btl_wtp,
+    institutional_wtp,
+    household_rent_wtp,
     estimate_market_rent,
 )
 import utility
@@ -261,10 +262,17 @@ class HouseholdAgent(mesa.Agent):
         """Truthful WTP bid for ownership."""
         return self._wtp_for_property(prop, self.model.credit, purpose=purpose)
 
-    def compute_rent_bid(self):
-        """Maximum monthly rent bid (affordability ceiling)."""
-        ratio = self.model.config.valuation.max_rent_income_ratio
-        return household_max_rent(self.income, ratio)
+    def compute_rent_bid(self, prop):
+        """Maximum monthly rent bid for a specific property."""
+        cfg = self.model.config
+        base_rent = self._local_rent_estimate()
+        quality_value = cfg.valuation.quality_value_scale * prop.quality
+        return household_rent_wtp(
+            quality_value,
+            base_rent,
+            self.income,
+            cfg.valuation.max_rent_income_ratio,
+        )
 
     # ------------------------------------------------------------------
     # Balance sheet updates
@@ -458,49 +466,23 @@ class HouseholdAgent(mesa.Agent):
 
     def _wtp_for_property(self, prop, credit, purpose="buy"):
         cfg = self.model.config
-
-        #reference_price = (
-            #self.model._price_history[-1] if self.model._price_history else prop.estimated_value
-        #) Why are we using a model wide mean price from price history? Shouldnt this always be propert specific. 
-        #same for institutions 
-        capital_gain = self.expected_price_growth * prop.estimated_value
-
-        # Agent's own estimate of what a property in this zone would rent for
-        zones = self.model.get_household_search_zones(self.home_zone)
-        comps = [
-            p.current_rent for p in self.model.properties
-            if p.zone in zones and p.current_rent is not None
-        ]
-        base_rent = float(np.mean(comps)) if comps else self._local_rent_estimate()
-        monthly_rent = estimate_market_rent(
-            prop.quality, base_rent, cfg.valuation.quality_sensitivity
-        )
+        base_rent = self._local_rent_estimate()
+        ceiling = credit.max_affordable_price(self.cash, self.income)
 
         if purpose == "buy":
-            # Owner-occupier primary residence purchase
-            quality_value = cfg.valuation.quality_value_scale * prop.quality
-            outside_option = base_rent
-
-            wtp = household_wtp(
-                quality_value,
-                capital_gain,
-                outside_option,
-                credit.mortgage_rate,
-                credit.ltv_limit,
-                credit.max_affordable_price(self.cash, self.income),
+            return household_buy_wtp(
+                prop.quality, cfg.valuation.quality_value_scale,
+                base_rent, credit.mortgage_rate,
+                self.expected_price_growth, ceiling,
             )
-            return wtp
-
-        # Buy-to-let / investment purchase
-        net_rent = monthly_rent
-        wtp = investor_wtp(
-            net_rent,
-            capital_gain,
-            cfg.credit.btl_funding_rate,
-            cfg.credit.btl_ltv,
-        )
-        wtp = min(wtp, credit.max_affordable_price(self.cash, self.income))
-        return wtp
+        elif purpose == "buy-to-let":
+            return household_btl_wtp(
+                prop.quality, cfg.valuation.quality_sensitivity,
+                base_rent, cfg.credit.btl_funding_rate,
+                self.expected_price_growth, ceiling,
+            )
+        else:
+            raise ValueError(f"Unknown purchase purpose: {purpose!r}")
 
     def step(self):
         """Mesa step hook. Orchestrated by model."""
@@ -751,31 +733,17 @@ class InstitutionalAgent(mesa.Agent):
 
     def _wtp_for_property(self, prop):
         cfg = self.model.config
-        #reference_price = (
-            #self.model._price_history[-1] if self.model._price_history else prop.estimated_value
-        #)
-        capital_gain = self.expected_price_growth * prop.estimated_value
 
         comps = [p.current_rent for p in self.model.properties if p.current_rent is not None]
         base_rent = float(np.mean(comps)) if comps else 0.0
-        gross_monthly_rent = estimate_market_rent(
-            prop.quality, base_rent, cfg.valuation.quality_sensitivity
-        )
-        net_rent = gross_monthly_rent
-        effective_rate = float(self.funding_rate + cfg.agent_init.inst_required_return)
 
-        wtp = investor_wtp(
-            net_rent,
-            capital_gain,
-            effective_rate,
-            cfg.credit.inst_ltv,
+        return institutional_wtp(
+            prop.quality, cfg.valuation.quality_sensitivity,
+            base_rent, self.funding_rate,
+            cfg.agent_init.inst_required_return,
+            self.expected_price_growth,
+            self.cash, cfg.credit.inst_ltv,
         )
-        inst_ltv = cfg.credit.inst_ltv
-        if inst_ltv < 1.0:
-            max_price = self.cash / max(1e-9, (1.0 - inst_ltv))
-            wtp = min(wtp, max_price)
-
-        return wtp
 
     def step(self):
         pass

@@ -374,9 +374,9 @@ class HousingModel(mesa.Model):
             for hh in renter_households:
                 candidates = self._get_rental_candidates(hh)
                 if candidates:
-                    rent_bid = hh.compute_rent_bid()
-                    if rent_bid > 0:
-                        for c in candidates:
+                    for c in candidates:
+                        rent_bid = hh.compute_rent_bid(c)
+                        if rent_bid > 0:
                             rental_market.submit_bid(c.id, hh.unique_id, rent_bid)
             rental_txns = rental_market.resolve()
             self._apply_rental_transactions(rental_txns)
@@ -681,9 +681,9 @@ class HousingModel(mesa.Model):
             elif action == "rent":
                 rental_candidates = self._get_rental_candidates(agent)
                 if rental_candidates:
-                    rent_bid = agent.compute_rent_bid()
-                    if rent_bid > 0:
-                        for chosen in rental_candidates:
+                    for chosen in rental_candidates:
+                        rent_bid = agent.compute_rent_bid(chosen)
+                        if rent_bid > 0:
                             if self._debug_bid_logging:
                                 self._debug_rental_bid_log.append(
                                     {
