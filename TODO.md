@@ -1,13 +1,24 @@
 # Overall
 1. Consolidate - there is a lot of code that is doing similar things in different places, and it is totally unclear which of these is being used where. Model in particular has a lot of code that belongs in other places, or overlaps with other places, and agents does too, move anything that does not *have* to live in agents or model to the appropriate module so you can actualyl see/consolidate the logic around each thing.
 2. Decide where and when expectations are to be updated, and do so consistently. We have a partial update in model, and a partial update in agents, but we need to decide where the single source of truth for expectations is, and make sure it's being updated consistently.
+3. Document code properly, replace slop docstrings with decent ones.
 
-## Agents
+## Agents (particularly HouseholdAgent)
+ - Ensure all the stuff from expectations/valuation/utility is actually wired in properly.
+ - Why are we storing expected growth as a per instance attribute, this is something that should be calculated when necessary, not stored and updated in multiple places and potentially get out of sync.
+ - Choose actions is completely ignoring the representative utility of the different choices and instead just doing some heuristics based on price and rent (not even expected price and rent, just current mean price and rent), this is not right, we need to be calculating expected utility of the different choices and choosing based on that. The list of actions is also rather incoherent, we're checking whether they want to "rent out" regardless of whether it is already rented or not (or whether they potentially live in it or not) and on the agent action side, there is no option to do nothing, agents are forced to "buy" (presumably meaning buy and move in) or "buy to let" or "rent" (with this last one again making no sense if the agent is already renting/owns other properties) this makes distinctions between things that don't aren't distinct and doens't make distinctions between things that are distinct. We should be doing something more like:
+   - If you don't own a property, you can choose to buy and move in, or rent (which you end up doing anyway if you don't succeed at bidding).
+   - If you own a property and it's not rented out, you can choose to sell, rent out, or do nothing.
+   - If you own a property and it's rented out, you can choose to sell or do nothing.
+   - etc.
  - There are still enough commonalities here that a BaseAgent class would be useful to consolidate some of the code and make it clearer what is actually different between the agents.
  - ''_local_rent_estimate(self)'' should not exist, use expectations!
  - Ensure the choose property logic is only happening once everything is listed, and that the candidates are only listed houses.
  - Fire sale logic should stop when enough are sold, not just when there are no more to sell.
  - We need proper WTP calculations for rent bids not the heuristic that currently exists.
+ - Income dynamics needs to be moved to the appropriate place.
+ - The expectations stuff in here is based on the old code.
+ - WTP is implemented in here rather than referring to valuation, and implemented wrong, not using expectations, and not using utility.
 
 ## Config
  - We need a risk free rate in the macro config to be used in valuation.
@@ -27,7 +38,7 @@
  - Add share of transaction VALUE 
 
 ## Model
- - 
+ - Ensure all the stuff from agents/expectations/valuation/utility is actually wired in properly.
 
 ## Plotting
  - 

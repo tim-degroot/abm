@@ -1,23 +1,5 @@
 """
 Agent definitions.
-
-  Tenant, Owner-Occupier, Landlord are NOT agent classes.
-  They are economic roles derived from agent state.
-
-  home_property : the property id where this household resides
-
-  owned_properties : set of property ids this household owns.
-
-  Derived roles:
-    is_owner_occupier : home_property in owned_properties
-    is_renter         : housed but home_property not owned
-    is_landlord       : owns properties other than home_property
-
-  Valid simultaneous role combinations:
-    renter                  - lives in rented property, owns nothing
-    owner-occupier          - lives in owned property, no other holdings
-    owner-occupier+landlord - lives in owned home, also owns rentals
-    renter+landlord         - rents their own home, owns investment properties
 """
 
 import numpy as np
@@ -71,10 +53,6 @@ def _logit_probs(scores):
 class HouseholdAgent(mesa.Agent):
     """
     A household. Role is entirely derived from ownership and occupancy state.
-
-    home_property   : id of property where household currently lives, or None
-    owned_properties: set of property ids owned by this household
-    _mortgages      : {prop_id: (purchase_price, ltv, steps_held)}
     """
 
     def __init__(
