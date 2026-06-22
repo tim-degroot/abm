@@ -631,16 +631,16 @@ class InstitutionalAgent(mesa.Agent):
             return utility.delta_v_acquire(
                 net_rent=_rent(p),
                 expected_capital_gain=self.expected_price_growth * p.estimated_value,
-                funding_rate=effective_rate, ltv=ltv, price=p.estimated_value,
-                risk_free_rate=self.funding_rate,
+                funding_rate=self.funding_rate, ltv=ltv, price=p.estimated_value,
+                risk_free_rate=effective_rate,
             )
 
         def _hold(p):
             return utility.delta_v_hold(
                 net_rent=_rent(p),
                 expected_capital_gain=self.expected_price_growth * p.estimated_value,
-                funding_rate=effective_rate, ltv=ltv, price=p.estimated_value,
-                market_value=p.estimated_value, risk_free_rate=self.funding_rate,
+                funding_rate=self.funding_rate, ltv=ltv, price=p.estimated_value,
+                market_value=p.estimated_value, risk_free_rate=effective_rate,
             )
 
         result = {}
