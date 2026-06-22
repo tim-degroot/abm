@@ -669,7 +669,7 @@ class HousingModel(mesa.Model):
                                 else "institution"
                             ),
                             "cash": float(agent.cash),
-                            "income": float(agent.income),
+                            "income": float(getattr(agent, "income", 0.0)),
                             "expected_price_growth": float(agent.expected_price_growth),
                         }
                     )
@@ -747,12 +747,15 @@ class HousingModel(mesa.Model):
 
         return False
 
-    def _purchase_price_ceiling(self, agent):  # this is just a wrapper, integrate and remove
+    def _purchase_price_ceiling(self, agent):
         """Highest purchase price an agent can safely bid after servicing."""
         current_due = 0.0
         if hasattr(agent, "mortgage_payment_due"):
             current_due = agent.mortgage_payment_due()
         available_cash = max(0.0, agent.cash - current_due)
+
+        if not hasattr(agent, "income") or agent.income is None:
+            return agent.cash
 
         return self.credit.max_affordable_price(available_cash, agent.income)
 

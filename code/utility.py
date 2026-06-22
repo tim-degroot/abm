@@ -128,15 +128,14 @@ def delta_v_acquire(
     funding_rate: float,
     ltv: float,
     price: float,
-    cash: float,
     risk_free_rate: float,
 ) -> float:
-    """Surplus from buying a property over investing the same cash at the risk-free rate.
-    ΔV_acquire = E[Π_I] − r_f·cash
-    = (net_rent + E[Δp] − r_f·L·p) − r_f·cash
+    """Surplus from buying a property over the risk-free return on the equity deployed.
+    ΔV_acquire = E[Π_I] − r_f·(1−L)·p
     """
     pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
-    return pnl - risk_free_rate * cash
+    equity = (1.0 - ltv) * price
+    return pnl - risk_free_rate * equity
 
 
 def delta_v_hold(
@@ -149,11 +148,14 @@ def delta_v_hold(
     risk_free_rate: float,
 ) -> float:
     """Surplus from continuing to own a property over liquidating it at market value.
-    ΔV_hold = E[Π_I] − r_f·market_value
-    Caller sums over the full portfolio to get V̄_hold.
+    Equity freed on sale = market_value − L·price (proceeds after loan paydown).
+    ΔV_hold = E[Π_I] − r_f·(market_value − L·price)
     """
     pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
-    return pnl - risk_free_rate * market_value
+    proceeds = market_value - ltv * price
+    if proceeds < 0.0:
+        return pnl  # negative equity → sale crystallises a loss, so hold is always better
+    return pnl - risk_free_rate * proceeds
 
 
 def delta_v_sell_institution(

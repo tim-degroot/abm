@@ -615,23 +615,31 @@ class InstitutionalAgent(mesa.Agent):
 
     def choose_action(self, purchase_candidates):
         ltv = self.model.credit.inst_ltv
-        owned = [self.model._property_map[pid] for pid in self.portfolio]
+        cfg = self.model.config
+        effective_rate = self.funding_rate + cfg.agent_init.inst_required_return
+
+        rents_list = [p.current_rent for p in self.model.properties if p.current_rent is not None]
+        market_rent = float(np.mean(rents_list)) if rents_list else 0.0
+
         feasible = [p for p in purchase_candidates
                     if p.estimated_value <= self.cash / max(1e-9, 1.0 - ltv)]
 
+        def _rent(p):
+            return estimate_market_rent(p.quality, market_rent, cfg.valuation.quality_sensitivity)
+
         def _acquire(p):
             return utility.delta_v_acquire(
-                net_rent=p.quality * self.expected_rent_growth,  # TODO: rent level
+                net_rent=_rent(p),
                 expected_capital_gain=self.expected_price_growth * p.estimated_value,
-                funding_rate=self.funding_rate, ltv=ltv, price=p.estimated_value,
-                cash=self.cash, risk_free_rate=self.funding_rate,
+                funding_rate=effective_rate, ltv=ltv, price=p.estimated_value,
+                risk_free_rate=self.funding_rate,
             )
 
         def _hold(p):
             return utility.delta_v_hold(
-                net_rent=p.quality * self.expected_rent_growth,  # TODO: rent level
+                net_rent=_rent(p),
                 expected_capital_gain=self.expected_price_growth * p.estimated_value,
-                funding_rate=self.funding_rate, ltv=ltv, price=p.estimated_value,
+                funding_rate=effective_rate, ltv=ltv, price=p.estimated_value,
                 market_value=p.estimated_value, risk_free_rate=self.funding_rate,
             )
 

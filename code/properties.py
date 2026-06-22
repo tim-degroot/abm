@@ -5,7 +5,7 @@ Properties are passive state containers.
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(unsafe_hash=True)
 class Property:
     id: int
     zone: int
