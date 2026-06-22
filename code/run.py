@@ -56,21 +56,26 @@ def main():
         vol = latest["transaction_volume"]
         own_rate = latest["ownership_rate"]
         inst_share = latest["institutional_ownership_share"]
-        mp_share = latest["household_marginal_pricer_share"]
         avg_r = latest["avg_rent"]
 
         price_str = f"{avg_price:,.0f}" if pd.notna(avg_price) else "N/A"
-        mp_str = f"{mp_share:.2f}" if pd.notna(mp_share) else "N/A"
         rent_str = f"{avg_r:,.0f}" if pd.notna(avg_r) else "N/A"
+
+        oo = latest.get("owner_occupier_share")
+        ll = latest.get("landlord_share")
+        inst = latest.get("institution_share")
+        oo_str = f"{oo:.2f}" if pd.notna(oo) else "N/A"
+        ll_str = f"{ll:.2f}" if pd.notna(ll) else "N/A"
+        inst_str = f"{inst:.2f}" if pd.notna(inst) else "N/A"
 
         print(
             f"Step {step + 1:>3} | "
-            f"AvgPrice: {price_str:>12} | "
+            f"AvgPrice: {price_str:>8} | "
             f"Vol: {vol:>5} | "
             f"OwnRate: {own_rate:>5.2f} | "
             f"InstShare: {inst_share:>5.2f} | "
-            f"HH_MP: {mp_str:>6} | "
-            f"AvgRent: {rent_str:>10}"
+            f"OO: {oo_str:>5} LL: {ll_str:>5} Inst: {inst_str:>5} | "
+            f"AvgRent: {rent_str:>5}"
         )
 
     print("=" * 60)

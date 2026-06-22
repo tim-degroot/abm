@@ -34,8 +34,8 @@
  - 
 
 ## Metrics
- - Make marginal-pricer classification three-way (owner-occupier / landlord / institution); code only splits household vs institution.
- - Add share of transaction VALUE 
+ - ~~Make marginal-pricer classification three-way (owner-occupier / landlord / institution); code only splits household vs institution.~~
+ - ~~Add share of transaction VALUE~~
 
 ## Model
  - Ensure all the stuff from agents/expectations/valuation/utility is actually wired in properly.

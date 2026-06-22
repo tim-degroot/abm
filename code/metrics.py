@@ -47,6 +47,32 @@ def household_ownership_share(model):
     return hh_owned / total
 
 
+def owner_occupier_ownership_share(model):
+    """Fraction of total housing stock owned by owner-occupier households."""
+    total = len(model.properties)
+    if total == 0:
+        return np.nan
+    count = 0
+    for p in model.properties:
+        owner = model._agent_map.get(p.owner_id)
+        if isinstance(owner, HouseholdAgent) and owner.home_property == p.id:
+            count += 1
+    return count / total
+
+
+def landlord_ownership_share(model):
+    """Fraction of total housing stock owned by landlord households."""
+    total = len(model.properties)
+    if total == 0:
+        return np.nan
+    count = 0
+    for p in model.properties:
+        owner = model._agent_map.get(p.owner_id)
+        if isinstance(owner, HouseholdAgent) and owner.home_property != p.id:
+            count += 1
+    return count / total
+
+
 def avg_rent(model):
     """Mean monthly rent across currently rented properties."""
     rents = [
@@ -67,13 +93,62 @@ def rental_transaction_volume(model):
     return len(model.this_step_rental_transactions)
 
 
-def household_marginal_pricer_share(model):
-    """Share of this step's ownership transactions won by households."""
+def _classify_buyer(txn, model):
+    buyer = model._agent_map[txn.buyer_id]
+    if isinstance(buyer, InstitutionalAgent):
+        return "institution"
+    return "owner-occupier" if buyer.home_property == txn.property_id else "landlord"
+
+
+def owner_occupier_share(model):
     txns = model.this_step_transactions
     if not txns:
         return np.nan
-    hh_wins = sum(1 for t in txns if t.buyer_type == "household")
-    return hh_wins / len(txns)
+    return sum(1 for t in txns if _classify_buyer(t, model) == "owner-occupier") / len(txns)
+
+
+def landlord_share(model):
+    txns = model.this_step_transactions
+    if not txns:
+        return np.nan
+    return sum(1 for t in txns if _classify_buyer(t, model) == "landlord") / len(txns)
+
+
+def institution_share(model):
+    txns = model.this_step_transactions
+    if not txns:
+        return np.nan
+    return sum(1 for t in txns if _classify_buyer(t, model) == "institution") / len(txns)
+
+
+def owner_occupier_value_share(model):
+    txns = model.this_step_transactions
+    if not txns:
+        return np.nan
+    total = sum(t.price for t in txns)
+    if total <= 0:
+        return np.nan
+    return sum(t.price for t in txns if _classify_buyer(t, model) == "owner-occupier") / total
+
+
+def landlord_value_share(model):
+    txns = model.this_step_transactions
+    if not txns:
+        return np.nan
+    total = sum(t.price for t in txns)
+    if total <= 0:
+        return np.nan
+    return sum(t.price for t in txns if _classify_buyer(t, model) == "landlord") / total
+
+
+def institution_value_share(model):
+    txns = model.this_step_transactions
+    if not txns:
+        return np.nan
+    total = sum(t.price for t in txns)
+    if total <= 0:
+        return np.nan
+    return sum(t.price for t in txns if _classify_buyer(t, model) == "institution") / total
 
 
 def total_household_net_worth(model):
@@ -181,9 +256,16 @@ MODEL_REPORTERS = {
     "ownership_rate": ownership_rate,
     "institutional_ownership_share": institutional_ownership_share,
     "household_ownership_share": household_ownership_share,
+    "owner_occupier_ownership_share": owner_occupier_ownership_share,
+    "landlord_ownership_share": landlord_ownership_share,
     "avg_rent": avg_rent,
     "rental_transaction_volume": rental_transaction_volume,
-    "household_marginal_pricer_share": household_marginal_pricer_share,
+    "owner_occupier_share": owner_occupier_share,
+    "landlord_share": landlord_share,
+    "institution_share": institution_share,
+    "owner_occupier_value_share": owner_occupier_value_share,
+    "landlord_value_share": landlord_value_share,
+    "institution_value_share": institution_value_share,
     "total_household_net_worth": total_household_net_worth,
     "price_to_rent_ratio": price_to_rent_ratio,
     "avg_loan_to_value": avg_loan_to_value,
