@@ -26,7 +26,7 @@ class PropertyInitConfig(BaseModel):
     property_residual_sd: float = Field(0.3, ge=0)
     init_base_price: float = Field(200_000.0, gt=0)
     init_price_quality_sensitivity: float = Field(50_000.0, ge=0)
-    init_ownership_prob: float = Field(0.5, ge=0, le=1)
+    init_ownership_prob: float = Field(0.96, ge=0, le=1)
 
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -38,9 +38,9 @@ class AgentInitConfig(BaseModel):
     ltv_dist_high: float = Field(0.85, ge=0, le=1)
     risk_aversion_mu: float = 1.0
     risk_aversion_sigma: float = Field(0.5, ge=0)
-    inst_cash_low: float = Field(2_000_000.0, ge=0)
-    inst_cash_high: float = Field(10_000_000.0, ge=0)
-    inst_required_return: float = Field(0.0015, ge=0) # 1.8% APR
+    inst_cash_low: float = Field(1_500_000.0, ge=0)
+    inst_cash_high: float = Field(3_500_000.0, ge=0)
+    inst_required_return: float = Field(0.0003, ge=0) # 3.6% APR
     inst_min_yield: float = Field(0.04, ge=0)
     loss_aversion: float = Field(1.30, ge=0)
 
@@ -59,6 +59,7 @@ class ValuationConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     quality_sensitivity: float = Field(0.3, ge=0)
     quality_value_scale: float = Field(2000.0, ge=0)
+    max_rent_income_ratio: float = Field(0.3, ge=0, le=1)
 
 class ExpectationsConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
