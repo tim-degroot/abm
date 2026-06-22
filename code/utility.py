@@ -112,11 +112,8 @@ def delta_v_hold(
     risk_free_rate: float,
 ) -> float:
     """Surplus from continuing to own a property over liquidating it at market value.
-<<<<<<< HEAD
-=======
     Equity freed on sale = market_value − L·price (proceeds after loan paydown).
     ΔV_hold = E[Π_I] − r_f·(market_value − L·price)
->>>>>>> 35069bc8f4117bf27b5458021b25a7653b5596fc
     """
     pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
     proceeds = market_value - ltv * price
