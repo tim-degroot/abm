@@ -93,16 +93,7 @@ def compute_responses(df, sa_cfg):
     for r in sa_cfg["responses"]:
         name = r["name"]
         if r.get("custom"):
-            if name == "max_drawdown":
-                prices = df["avg_sale_price"].dropna()
-                if len(prices) > 0:
-                    peak = prices.expanding().max()
-                    dd = (peak - prices) / peak
-                    results[name] = float(dd.max()) if float(dd.max()) > 0 else 0.0
-                else:
-                    results[name] = 0.0
-            else:
-                raise ValueError(f"Unknown custom response: {name}")
+            raise ValueError(f"Unknown custom response: {name}")
         else:
             series = df[r["metric"]]
             tail = r.get("tail")
@@ -203,7 +194,7 @@ def main():
     ctx = get_context("spawn")
     with ctx.Pool(n_cores) as pool:
         all_results = []
-        with tqdm(total=len(param_rows), desc="Running simulations") as pbar:
+        with tqdm(total=len(param_rows), desc="Running simulations", file=_sys.stderr) as pbar:
             for r in pool.imap_unordered(run_single, [(r, sa_cfg) for r in param_rows]):
                 all_results.append(r)
                 pbar.update()

@@ -6,10 +6,10 @@
 
 
 sobol:
-  N: 4                    # base sample size (total runs = N × (2k+2))
+  N: 4                     # base sample size (total runs = N × (2k+2))
   seed: 42                 # rng seed for Saltelli sequence
 
-steps: 12                 # simulation length (set to e.g. 24 for quick smoke tests)
+steps: 720                 # simulation length (set to e.g. 24 for quick smoke tests)
 
 
 parameters:
@@ -61,9 +61,6 @@ responses:
     reduce: last
     description: "Institutional ownership share at final step"
 
-  - name: max_drawdown
-    custom: true
-    description: "Peak-to-trough price drop (max drawdown)"
 
 
 parallel:
