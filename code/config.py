@@ -6,9 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SimConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    n_households: int = Field(100, gt=0)
+    n_households: int = Field(250, gt=0)
     n_institutions: int = Field(5, gt=0)
-    n_properties: int = Field(120, gt=0)
+    n_properties: int = Field(300, gt=0)
     n_steps: int = Field(720, gt=0)
     seed: int = 42
 
