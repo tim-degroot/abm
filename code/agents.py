@@ -690,7 +690,8 @@ class InstitutionalAgent(mesa.Agent):
         deposit = price * (1.0 - ltv)
         if self.cash < deposit:
             raise RuntimeError(
-                f"Institution {self.unique_id} cannot cover deposit {deposit:.2f}; bid/financing logic failed."
+                f"Institution {self.unique_id} cannot cover deposit {deposit:.2f}; "
+                "bid/financing logic failed."
             )
 
         self.cash -= deposit

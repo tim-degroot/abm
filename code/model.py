@@ -732,17 +732,19 @@ class HousingModel(mesa.Model):
         if hasattr(agent, "mortgage_payment_due"):
             current_due = agent.mortgage_payment_due()
 
+        price_ceiling = self._purchase_price_ceiling(agent)
+
         if isinstance(agent, HouseholdAgent):
             ltv = self.credit.ltv_limit
-            deposit = prop.estimated_value * (1.0 - ltv)
+            deposit = price_ceiling * (1.0 - ltv)
             if agent.cash < current_due + deposit:
                 return False
-            new_payment = self.credit.monthly_mortgage_payment(prop.estimated_value, ltv)
+            new_payment = self.credit.monthly_mortgage_payment(price_ceiling, ltv)
             return current_due + new_payment <= self.credit.dti_limit * agent.income / 12.0
 
         if isinstance(agent, InstitutionalAgent):
             ltv = self.credit.inst_ltv
-            deposit = prop.estimated_value * (1.0 - ltv)
+            deposit = price_ceiling * (1.0 - ltv)
             return agent.cash >= current_due + deposit
 
         return False
