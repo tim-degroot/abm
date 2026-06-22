@@ -1,3 +1,4 @@
+
 # 1. Motivation and Research Question
 
 Housing ABMs in the Gilbert–Gamal tradition generate complex dynamics through behavioural heuristics. Agents cross wealth thresholds, react to financial conditions, and follow empirically motivated decision rules.
@@ -125,7 +126,7 @@ where $\mu_z$ is a fixed zone-level quality mean and $\nu_k$ is a property-speci
 
 # 4. Agent Classes
 
-Owner-occupiers and private landlords are both household agents; they share the same objective function and differ only in tenure state and portfolio. Tenants are not a separate agent class — tenancy is a tenure *state* that household agents cycle through (unhoused → renting → owning → potentially back to renting). The objective function is identical across tenure states; what changes is the feasible action set. (Or 4 separate classes, including Tenants?)
+Owner-occupiers and private landlords are both household agents; they share the same objective function and differ only in tenure state and portfolio. Tenants are not a separate agent class — tenancy is a tenure *state* that household agents cycle through (unhoused → renting → owning → potentially back to renting). The objective function is identical across tenure states; what changes is the feasible action set. 
 
 ## Owner-Occupiers
 
@@ -822,58 +823,3 @@ Every model period represents **one calendar month**. All flows, rates, and dura
 Config parameters with an implicit "per period" unit are rescaled accordingly. All code comments referencing "annual" have been updated to "monthly". Method names like `annual_mortgage_payment` have been renamed to `monthly_mortgage_payment`.
 
 ---
-
-# 28. Implementation TODO
-
-Priority-ordered. Everything below follows this plan unless there is a very good reason not to.
-
-### P0 — Baseline Pathologies (blocking all experiments)
-
-1. **Explosive price dynamics** — feedback loop in E[Δp] anchored to realised prices, not fundamentals. Root cause of most other pathologies.
-2. **Rental market collapse** — dies after ~2 steps. Fix requires lease expiry, re-queuing unhoused agents, low-probability re-search for housed renters.
-3. **Institutional dominance** — crowds out all household ownership.
-4. **Initial ownership rate** too low vs. 65% UK target.
-
-### P1 — Core Model Completion
-
-5. Calibrate `wealth_income_mult_*`, `income_median`, and related init knobs so emergent ownership stays near 65% without `ownership_mode="target"`.
-6. Replace mean-reverting income dynamics with macro growth shocks.
-7. Review decision-rule weights, quality handling, and reservation-price logic against this plan (§10–§13). Quality weight needs attention: raw $q_k \in [0,1]$ is too small to move the needle; consider normalising to percentiles or adding a weight parameter. Landlord decisions should not include quality directly — only through achievable rent $R$.
-8. Implement risk and loss aversion properly per §5 and §8.
-9. Review logit temperatures for reasonableness.
-
-### P2 — Diagnostics & Experiments
-
-10. Build visualisations for prices, rents, tenure composition, and wealth by agent type.
-11. Add spatial quality clustering behind `quality_clustering` flag and test.
-12. Expand visual diagnostics by agent type.
-13. Run mirror experiments (§20) and sensitivity analysis (§22).
-
----
-
-# 30. Key Design Principles
-
-Accumulated from development — consult before making architectural decisions.
-
-- **Proportional vs. fixed capital gains**: proportional growth (% of price) is realistic; the problem is that E[Δp] must be bounded and anchored to fundamentals rather than echoing realised prices.
-- **E[Δp] is the key heterogeneous term**: subjective expectations drive agent differentiation and marginal-pricer transitions; CF and FC differences are real but more structurally determined.
-- **Information asymmetry + utility differences are both necessary** for marginal-pricer transitions: utility differences enable the transition; information asymmetry produces the temporal lag that makes it gradual.
-- **Bounded rationality as deliberate assumption**: owner-occupiers not connecting rising rates to falling prices is a simplifying assumption (not a behavioural law); flag as such, with relaxation as a natural extension.
-- **Task 1 vs. Task 2 distinction**: Task 1 bounds the expectation term (beliefs); Task 2 imposes a hard affordability ceiling (what a bank would actually lend). Distinct mechanisms.
-- **ε placement**: the idiosyncratic taste shock appears only once — either in $p^{\max}$ or in the logit, not both (double-counting).
-- **V → surplus → U flow**: raw property value $V$ is computed first, then surplus $\Delta V = V - V^{outside}$, then CRRA utility $U(\Delta V)$ is applied before entering the logit.
-- **Ownership rate vs. household share of stock**: differently defined fractions; do not plot on the same axis without clear labelling.
-
----
-
-# 31. References
-
-- Gamal et al. (2024), JASSS: https://www.jasss.org/23/2/7.html
-- Bezemer & co-authors, "Roof or real estate? An agent-based model of housing affordability"
-- Genesove & Mayer (2001), Loss aversion and seller behaviour
-- Parunak et al. (1998), Bonabeau (2002) — ABM methodology
-- Baptista et al. (2016), Carro et al. (2022) — housing ABMs
-- Geanakoplos et al. (2012), Axtell et al. (2014) — leverage cycles
-- Farmer & Foley (2009) — complexity economics
-- Fagiolo et al. (2019) — ABM validation framework
-- UK data: BoE rates, ONS wage growth / WAS / ASHE / HPI, PRA LTV rules, FCA MPSD, English Housing Survey, HMRC stamp duty, IMD for spatial quality
