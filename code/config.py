@@ -44,7 +44,7 @@ class AgentInitConfig(BaseModel):
     risk_aversion_sigma: float = Field(0.5, ge=0)
     inst_cash_low: float = Field(5_000_000.0, ge=0)
     inst_cash_high: float = Field(20_000_000.0, ge=0)
-    inst_required_return: float = Field(0.0025, ge=0)
+    inst_required_return: float = Field(0.004, ge=0)
     inst_min_yield: float = Field(0.04, ge=0)
     loss_aversion: float = Field(1.30, ge=0)  ###
 
@@ -65,7 +65,7 @@ class CreditConfig(BaseModel):
 class ValuationConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     quality_sensitivity: float = Field(0.3, ge=0)
-    quality_value_scale: float = Field(1000.0, ge=0)
+    quality_value_scale: float = Field(2000.0, ge=0)
     max_rent_income_ratio: float = Field(0.35, ge=0, le=1)
 
 
