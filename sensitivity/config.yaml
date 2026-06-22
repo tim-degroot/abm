@@ -1,0 +1,77 @@
+# =============================================================================
+# SA Harness Configuration
+# =============================================================================
+# Edit this file to change parameters, response functions, or compute settings.
+# The harness reads this file at runtime — no code changes needed.
+
+
+sobol:
+  N: 4                    # base sample size (total runs = N × (2k+2))
+  seed: 42                 # rng seed for Saltelli sequence
+
+steps: 12                 # simulation length (set to e.g. 24 for quick smoke tests)
+
+
+parameters:
+  - name: n_households
+    path: sim.n_households
+    bounds: [100, 300]
+    distribution: int
+
+  # - name: search_radius
+  #   path: spatial.search_radius
+  #   bounds: [0, 3]
+  #   distribution: int
+
+  - name: mortgage_rate
+    path: credit.mortgage_rate
+    bounds: [0.001, 0.01]
+    distribution: log-uniform
+
+  - name: ltv_limit
+    path: credit.ltv_limit
+    bounds: [0.60, 0.95]
+    distribution: uniform
+
+  - name: inst_required_return
+    path: agent_init.inst_required_return
+    bounds: [0.001, 0.01]
+    distribution: log-uniform
+
+  - name: loss_aversion
+    path: agent_init.loss_aversion
+    bounds: [0, 5]
+    distribution: uniform
+
+
+responses:
+  - name: mean_price
+    metric: avg_sale_price
+    reduce: nanmean
+    tail: 120
+    description: "Mean sale price over last 120 steps"
+
+  - name: price_volatility
+    metric: avg_sale_price
+    reduce: nanstd
+    description: "Std dev of sale price (full run)"
+
+  - name: inst_share_final
+    metric: institutional_ownership_share
+    reduce: last
+    description: "Institutional ownership share at final step"
+
+  - name: max_drawdown
+    custom: true
+    description: "Peak-to-trough price drop (max drawdown)"
+
+
+parallel:
+  n_cores: -1               # -1 = os.cpu_count(), or set e.g. 8
+  backend: multiprocessing
+
+
+output:
+  dir: results/sa
+  plot: sobol_indices.png
+  data: sobol_results.csv
