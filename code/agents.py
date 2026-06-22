@@ -458,10 +458,12 @@ class HouseholdAgent(mesa.Agent):
 
     def _wtp_for_property(self, prop, credit, purpose="buy"):
         cfg = self.model.config
-        reference_price = (
-            self.model._price_history[-1] if self.model._price_history else prop.estimated_value
-        )
-        capital_gain = self.expected_price_growth * reference_price
+
+        #reference_price = (
+            #self.model._price_history[-1] if self.model._price_history else prop.estimated_value
+        #) Why are we using a model wide mean price from price history? Shouldnt this always be propert specific. 
+        #same for institutions 
+        capital_gain = self.expected_price_growth * prop.estimated_value
 
         # Agent's own estimate of what a property in this zone would rent for
         zones = self.model.get_household_search_zones(self.home_zone)
@@ -749,10 +751,10 @@ class InstitutionalAgent(mesa.Agent):
 
     def _wtp_for_property(self, prop):
         cfg = self.model.config
-        reference_price = (
-            self.model._price_history[-1] if self.model._price_history else prop.estimated_value
-        )
-        capital_gain = self.expected_price_growth * reference_price
+        #reference_price = (
+            #self.model._price_history[-1] if self.model._price_history else prop.estimated_value
+        #)
+        capital_gain = self.expected_price_growth * prop.estimated_value
 
         comps = [p.current_rent for p in self.model.properties if p.current_rent is not None]
         base_rent = float(np.mean(comps)) if comps else 0.0
