@@ -4,15 +4,13 @@ Agent definitions.
   Tenant, Owner-Occupier, Landlord are NOT agent classes.
   They are economic roles derived from agent state.
 
-  home_property : the property id where this household *resides*
-                  (whether owned or rented). None = unhoused.
+  home_property : the property id where this household resides
 
   owned_properties : set of property ids this household owns.
 
   Derived roles:
     is_owner_occupier : home_property in owned_properties
     is_renter         : housed but home_property not owned
-                        (or unhoused — seeking rental)
     is_landlord       : owns properties other than home_property
 
   Valid simultaneous role combinations:
@@ -20,19 +18,7 @@ Agent definitions.
     owner-occupier          - lives in owned property, no other holdings
     owner-occupier+landlord - lives in owned home, also owns rentals
     renter+landlord         - rents their own home, owns investment properties
-
-  Mortgage tracking:
-    _mortgages : dict { property_id -> (purchase_price, ltv, steps_held) }
-    Each step, steps_held increments for all owned properties.
-    On sale, outstanding_principal is computed from this record.
-
-  Income dynamics:
-    Income evolves each period via a log-normal shock, mean-reverting
-    to the agent's baseline_income. This drives affordability changes
-    that cause renters to eventually buy and owners to default or sell.
 """
-
-# NO UNHOUSED
 
 import numpy as np
 import mesa
@@ -55,7 +41,7 @@ import utility
 from utility import household_action_value, institutional_action_value
 
 
-def _logit_probs(scores):  # We can remove it
+def _logit_probs(scores):
     """
     Compute logit probabilities from a list of (label, score) pairs.
 
@@ -70,7 +56,7 @@ def _logit_probs(scores):  # We can remove it
         probs = np.ones(len(values)) / len(values)
     else:
         shifted = np.where(finite_mask, values - values[finite_mask].max(), -np.inf)
-        exp_v = np.where(finite_mask, np.exp(np.clip(shifted, -500, 0)), 0.0)
+        exp_v = np.where(finite_mask, np.exp(np.clip(shifted, -500, 0)), 0.0) # numerical safeguard
         total = exp_v.sum()
         probs = exp_v / total if total > 0 else np.ones(len(values)) / len(values)
 

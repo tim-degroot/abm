@@ -46,8 +46,7 @@ class AgentInitConfig(BaseModel):
     inst_cash_high: float = Field(20_000_000.0, ge=0)
     inst_required_return: float = Field(0.004, ge=0)
     inst_min_yield: float = Field(0.04, ge=0)
-    loss_aversion: float = Field(1.30, ge=0)  ###
-
+    loss_aversion: float = Field(1.30, ge=0)
 
 
 class CreditConfig(BaseModel):

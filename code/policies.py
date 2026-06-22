@@ -33,7 +33,7 @@ class NoPolicy:
         """Called after each rental transaction completes."""
         pass
 
-class CreditShockPolicy(NoPolicy):
+class CreditShockPolicy(NoPolicy): # big hike, seems to be only for households though?
     def on_step_start(self, model):
         if model.steps == 240:
             model.credit = CreditEnvironment(

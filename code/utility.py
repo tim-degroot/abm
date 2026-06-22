@@ -1,26 +1,11 @@
 """
 Utility: converts P&L into logit inputs.
-
-Flow per action: compute Π (P&L) → compute V (value) → compute ΔV (surplus over outside
-option) → apply U (risk curvature) → feed logit.
-
-Sections:
-  - P&L helpers     raw profit/loss per agent type
-  - Value V         monetary value of an outcome
-  - ΔV per action   surplus = V − V_outside, the logit input
-  - U(ΔV)           risk curvature (CRRA for households, identity for institutions)
-  - Logit           action and property selection mechanism
 """
 
 import numpy as np
 import math
 from typing import Hashable, Mapping
 from dataclasses import dataclass
-
-# ---------------------------------------------------------------------------
-# P&L helpers  (internal — called by value and delta_v functions below)
-# ---------------------------------------------------------------------------
-
 
 def _pnl_owner_occupier(
     expected_capital_gain: float,
@@ -30,9 +15,6 @@ def _pnl_owner_occupier(
 ) -> float:
     """Monthly P&L for an owner-occupier.
     Gain from expected price growth minus monthly mortgage cost.
-    Π_H = E[Δp] − r_m·L·p, where r_m = mortgage rate, L = LTV ratio.
-    Imputed rent does not appear here because it is common to both owning and renting
-    and cancels in the surplus comparison.
     """
     return expected_capital_gain - mortgage_rate * ltv * price
 
@@ -46,7 +28,6 @@ def _pnl_landlord(
 ) -> float:
     """Monthly P&L for a private landlord.
     Rental income plus expected price growth minus mortgage cost.
-    Π_L = R − φ − r_f^BTL·L·p + E[Δp]
     """
     return net_rent + expected_capital_gain - btl_rate * ltv * price
 
@@ -60,14 +41,8 @@ def _pnl_institution(
 ) -> float:
     """Monthly P&L for an institutional investor.
     Same structure as landlord but cheaper funding rate.
-    Π_I = R − φ − r_f·L·p + E[Δp]
     """
     return net_rent + expected_capital_gain - funding_rate * ltv * price
-
-
-# ---------------------------------------------------------------------------
-# Value V  — monetary value before risk curvature
-# ---------------------------------------------------------------------------
 
 
 def value_owner_occupier(
@@ -79,7 +54,6 @@ def value_owner_occupier(
 ) -> float:
     """Value of owning and living in a property.
     Quality adds direct consumption value on top of P&L.
-    V^OO = q_k + Π_H
     """
     return quality_value + _pnl_owner_occupier(expected_capital_gain, mortgage_rate, ltv, price)
 
@@ -93,7 +67,6 @@ def value_landlord(
 ) -> float:
     """Value of owning and renting out a property.
     Quality does not enter directly — only through the rent R.
-    V^LL = Π_L
     """
     return _pnl_landlord(net_rent, expected_capital_gain, btl_rate, ltv, price)
 
@@ -107,20 +80,11 @@ def value_institution(
 ) -> float:
     """Value of a property for an institutional investor.
     Risk-neutral: value equals expected P&L, no curvature applied.
-    V^INST = E[Π_I]
     """
     return _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
 
-
-# ---------------------------------------------------------------------------
-# ΔV per action — the logit inputs  (Stage 1)
-# ---------------------------------------------------------------------------
-# ΔV = V(action) − V(outside option).
 # Institutions use risk-free return as the outside option for every action.
 # Households use their best feasible rental as the outside option.
-
-# --- Institutional investor ---
-
 
 def delta_v_acquire(
     net_rent: float,
@@ -130,8 +94,12 @@ def delta_v_acquire(
     price: float,
     risk_free_rate: float,
 ) -> float:
+<<<<<<< HEAD
+    """Surplus from buying a property over investing the same cash at the risk-free rate.
+=======
     """Surplus from buying a property over the risk-free return on the equity deployed.
     ΔV_acquire = E[Π_I] − r_f·(1−L)·p
+>>>>>>> 35069bc8f4117bf27b5458021b25a7653b5596fc
     """
     pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
     equity = (1.0 - ltv) * price
@@ -148,8 +116,11 @@ def delta_v_hold(
     risk_free_rate: float,
 ) -> float:
     """Surplus from continuing to own a property over liquidating it at market value.
+<<<<<<< HEAD
+=======
     Equity freed on sale = market_value − L·price (proceeds after loan paydown).
     ΔV_hold = E[Π_I] − r_f·(market_value − L·price)
+>>>>>>> 35069bc8f4117bf27b5458021b25a7653b5596fc
     """
     pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
     proceeds = market_value - ltv * price
@@ -169,35 +140,18 @@ def delta_v_sell_institution(
 ) -> float:
     """Surplus from selling. Symmetric opposite of hold: sell is preferred when
     the property earns less than the risk-free rate.
-    ΔV_sell = −ΔV_hold
     """
     return -delta_v_hold(net_rent, expected_capital_gain, funding_rate, ltv, price, market_value, risk_free_rate)
 
 
-# ---------------------------------------------------------------------------
-# U(ΔV) — risk curvature
-# ---------------------------------------------------------------------------
-
-
 def crra(delta_v: float, gamma: float) -> float:
     """Applies risk aversion to a surplus value.
-    U = sign(ΔV)·|ΔV|^(1−γ) / (1−γ).
-    γ=0 returns ΔV unchanged (risk-neutral, used for institutions).
-    
-    Returns -inf for non-positive surplus (infeasible action).
-    IS THIS TOO STRICT? CANT SURPLUS BE NEGATIVE?
-    Household may be able to buy a property but rationally prefer renting. 
-    The purchase is feasible, but unattractive
     """
     return crra_utility(delta_v, gamma)
 
 
 def crra_utility(surplus: float, gamma: float) -> float:
     """CRRA utility of a surplus.
-
-    U(ΔV) = (ΔV)^(1-γ) / (1-γ)   for γ ≠ 1
-    U(ΔV) = ln(ΔV)                for γ = 1
-
     Returns -inf for non-positive surplus (infeasible action).
     """
     if surplus <= 0.0:
@@ -215,8 +169,6 @@ def household_action_value(
     gamma: float,
 ) -> float:
     """Utility of an action for a household.
-
-    Computes U(ΔV) where ΔV = property_value - outside_option_value.
     """
     surplus = property_value - outside_option_value
     return crra_utility(surplus, gamma)
@@ -224,8 +176,6 @@ def household_action_value(
 
 def institutional_action_value(expected_profit: float) -> float:
     """Utility of an action for an institution.
-
-    Institutions are risk-neutral: U = E[Π].
     """
     return expected_profit
 
@@ -236,10 +186,8 @@ def apply_loss_aversion(
     purchase_anchor: float,
     loss_aversion: float,
 ) -> float:
-    """If an agent sells a property for less than they originally paid, the
+    """If a household sells a property for less than they originally paid, the
     perceived value of that sale is reduced by a penalty proportional to the loss.
-    Institutions do not pay this penalty (λ=1).
-    V̄^sell = sell_value − λ·max(p_0 − p, 0).
     """
     penalty = loss_aversion * max(purchase_anchor - sale_price, 0.0)
     return sell_value - penalty
@@ -251,29 +199,6 @@ def risk_adjusted_growth(
     risk_loading: float,
 ) -> float:
     """Reduced form household risk
-
-    adjusted_growth = expected_growth - risk_loading * expected_volatility
-
-    g_RA = E[g] - gamma_i * sigma_hat
-
-    where:
-
-    g_RA = Risk-adjusted expected growth
-
-    E[g] = The household's expected property-price growth. Point forecast or mean of a distribution. (self.expected_price_growth)
-
-    gamma_i = The household specific risk loading. (self.risk_aversion)
-
-    sigma_hat = The household's estimated volatility of future property-price growth. 
-                standard deviation of possible growth outcomes (self.model.config.expectations.household_price_growth_volatility).
-                household_price_growth_volatility = perceived uncertainty penalty households apply to expected growth
-                household_noise_sd != household_price_growth_volatility. 1. noise in the household's price forecasts 2. percieved volatility of actual price growth outcomes
-    
-    ToDo:
-    1. add helper to agent to get parameters
-    2. pass risk adjusted capital gain into household WTP should downstream into buy action, buy to let, propery selection, submitted bids
-    3. change hold score to use risk adjusted growth instead of expected growth
-    4. remove crra(), crra_utility(), household_action_value()
     """
     values = {
         "expected_growth": expected_growth,
@@ -292,12 +217,6 @@ def risk_adjusted_growth(
         raise ValueError("risk_loading must be non-negative")
 
     return expected_growth - risk_loading * expected_volatility
-
-
-# ---------------------------------------------------------------------------
-# Logit — action and property selection
-# ---------------------------------------------------------------------------
-
 
 @dataclass
 class DecisionContext:
