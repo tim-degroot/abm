@@ -86,6 +86,10 @@ class BaseMarket:
             else:
                 price = max(top_bid["amount"], reservation)
 
+            assert price <= top_bid["amount"], (
+                f"Vickrey invariant violated: price={price} > "
+                f"top_bid={top_bid['amount']} for property {property_id}"
+            )
             transactions.append(self._create_transaction(property_id, listing, top_bid, price))
 
         return transactions
@@ -134,7 +138,14 @@ class RentalMarket(BaseMarket):
         one rental, it is removed from later rental auctions in the same clearing
         round.
         """
-        property_ids = list(self._listings.keys())
+        property_ids = sorted(
+            self._listings.keys(),
+            key=lambda pid: max(
+                (b["amount"] for b in self._listings[pid]["bids"]),
+                default=0,
+            ),
+            reverse=True,
+        )
 
         if rng is not None and len(property_ids) > 1:
             if hasattr(rng, "permutation"):

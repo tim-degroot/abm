@@ -636,10 +636,11 @@ class HousingModel(mesa.Model):
             action = actions.get(agent.unique_id, {}).get("__agent__")
 
             if action in ("buy", "buy-to-let", "acquire"):
+                current_ltv = self._draw_origination_ltv()
                 affordable = [
                     p
                     for p in purchase_candidates
-                    if p.listed_for_sale and self._purchase_feasible(agent, p)
+                    if p.listed_for_sale and self._purchase_feasible(agent, p, origination_ltv=current_ltv)
                 ]
                 if not affordable:
                     continue
@@ -648,7 +649,7 @@ class HousingModel(mesa.Model):
                     continue
                 bid = min(
                     agent.compute_bid(chosen),
-                    self._purchase_price_ceiling(agent),
+                    self._purchase_price_ceiling(agent, origination_ltv=current_ltv),
                 )
                 if bid <= 0:
                     continue
@@ -667,13 +668,14 @@ class HousingModel(mesa.Model):
                             "cash": float(agent.cash),
                             "income": float(getattr(agent, "income", 0.0)),
                             "expected_price_growth": float(agent.expected_price_growth),
+                            "origination_ltv": float(current_ltv),
                         }
                     )
                 bidder_type = (
                     "household" if isinstance(agent, HouseholdAgent) else "institution"
                 )
                 ownership_market.submit_bid(
-                    chosen.id, agent.unique_id, bid, bidder_type
+                    chosen.id, agent.unique_id, bid, bidder_type, origination_ltv=current_ltv
                 )
                 submitted_pairs.add((agent.unique_id, chosen.id))
                 self._debug_counts["ownership_bids_submitted"] += 1
@@ -716,42 +718,30 @@ class HousingModel(mesa.Model):
         if listed_only:
             candidates = [p for p in candidates if p.listed_for_sale]
 
-        return [p for p in candidates if self._purchase_feasible(agent, p)]
+        return candidates
 
-    def _purchase_feasible(self, agent, prop):
-        """Feasibility check that includes current mortgage servicing burden."""
-        current_due = 0.0
-        if hasattr(agent, "mortgage_payment_due"):
-            current_due = agent.mortgage_payment_due()
-
-        price_ceiling = self._purchase_price_ceiling(agent)
-
-        if isinstance(agent, HouseholdAgent):
-            ltv = self.credit.ltv_limit
-            deposit = price_ceiling * (1.0 - ltv)
-            if agent.cash < current_due + deposit:
-                return False
-            new_payment = self.credit.monthly_mortgage_payment(price_ceiling, ltv)
-            return current_due + new_payment <= self.credit.dti_limit * agent.income / 12.0
-
-        if isinstance(agent, InstitutionalAgent):
-            ltv = self.credit.inst_ltv
-            deposit = price_ceiling * (1.0 - ltv)
-            return agent.cash >= current_due + deposit
-
-        return False
-
-    def _purchase_price_ceiling(self, agent):
+    def _purchase_price_ceiling(self, agent, origination_ltv=None):
         """Highest purchase price an agent can safely bid after servicing."""
-        current_due = 0.0
-        if hasattr(agent, "mortgage_payment_due"):
-            current_due = agent.mortgage_payment_due()
-        available_cash = max(0.0, agent.cash - current_due)
+        current_due = agent.mortgage_payment_due() if hasattr(agent, "mortgage_payment_due") else 0.0
+        available = max(0.0, agent.cash - current_due)
+        if isinstance(agent, HouseholdAgent):
+            return self.credit.household_max_price(available, agent.income, ltv=origination_ltv)
+        return self.credit.institution_max_price(available)
 
-        if not hasattr(agent, "income") or agent.income is None:
-            return agent.cash
-
-        return self.credit.max_affordable_price(available_cash, agent.income)
+    def _purchase_feasible(self, agent, prop, origination_ltv=None):
+        """Check whether agent can afford the property at the price they'd bid."""
+        ltv = origination_ltv if origination_ltv is not None else self.credit.ltv_limit
+        ceiling = self._purchase_price_ceiling(agent, origination_ltv=origination_ltv)
+        bid = agent.compute_bid(prop)
+        effective = min(bid, ceiling)
+        if effective <= 0:
+            return False
+        if isinstance(agent, HouseholdAgent):
+            current_due = agent.mortgage_payment_due() if hasattr(agent, "mortgage_payment_due") else 0.0
+            payment = self.credit.monthly_mortgage_payment(effective, ltv)
+            if current_due + payment > self.credit.dti_limit * agent.income / 12.0:
+                return False
+        return True
 
     def _get_rental_candidates(self, agent):
         """
@@ -768,7 +758,43 @@ class HousingModel(mesa.Model):
         return [p for p in listed if p.zone in zones]
 
     def _apply_ownership_transactions(self, transactions):
+        # Pre-compute net sale proceeds per agent (buyers who also sell will have
+        # their cash changed by pass 1 before we check affordability in pass 2).
+        sale_proceeds = {}
         for txn in transactions:
+            seller = self._agent_map.get(txn.seller_id)
+            if seller is None:
+                continue
+            prop = self._property_map[txn.property_id]
+            if hasattr(seller, "_mortgages") and prop.id in seller._mortgages:
+                orig_price, m_ltv, steps_held = seller._mortgages[prop.id]
+                outstanding = self.credit.outstanding_principal(orig_price, m_ltv, steps_held)
+            else:
+                outstanding = 0.0
+            net = txn.price - outstanding
+            sale_proceeds[txn.seller_id] = sale_proceeds.get(txn.seller_id, 0.0) + net
+
+        # Filter out transactions where the buyer can no longer afford the price
+        # after accounting for their own concurrent sales (negative equity
+        # reduces cash before the buyer deposit is due in pass 2).
+        valid = []
+        for txn in transactions:
+            buyer = self._agent_map.get(txn.buyer_id)
+            if buyer is None:
+                continue
+            ltv = txn.origination_ltv if txn.origination_ltv is not None else self.credit.ltv_limit
+            buyer_net = sale_proceeds.get(txn.buyer_id, 0.0)
+            current_due = buyer.mortgage_payment_due() if hasattr(buyer, "mortgage_payment_due") else 0.0
+            available = max(0.0, buyer.cash + buyer_net - current_due)
+            if isinstance(buyer, HouseholdAgent):
+                ceiling = self.credit.household_max_price(available, buyer.income, ltv=ltv)
+            else:
+                ceiling = self.credit.institution_max_price(available)
+            if txn.price <= ceiling:
+                valid.append(txn)
+
+        # Pass 1: property state changes + sellers get paid (sale proceeds credited)
+        for txn in valid:
             prop = self._property_map[txn.property_id]
             seller = self._agent_map.get(txn.seller_id)
             buyer = self._agent_map.get(txn.buyer_id)
@@ -792,10 +818,14 @@ class HousingModel(mesa.Model):
             prop.listed_for_rent = False
             prop.current_rent = None
 
+        # Pass 2: buyers pay deposits (sale proceeds already credited in pass 1)
+        for txn in valid:
+            buyer = self._agent_map.get(txn.buyer_id)
+            prop = self._property_map[txn.property_id]
             buyer.acquire_property(prop, txn.price, origination_ltv=txn.origination_ltv)
 
-        self.this_step_transactions = transactions
-        self.all_transactions.extend(transactions)
+        self.this_step_transactions = valid
+        self.all_transactions.extend(valid)
 
     def _apply_rental_transactions(self, transactions):
         applied = []
