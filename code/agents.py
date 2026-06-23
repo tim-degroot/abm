@@ -202,7 +202,7 @@ class HouseholdAgent(mesa.Agent):
         # --- Agent-level action: buy / buy-to-let / rent ---
         affordable = [
             p for p in purchase_candidates
-            if credit.max_affordable_price(self.cash, self.income) >= p.estimated_value
+            if credit.household_max_price(self.cash, self.income) >= p.estimated_value
         ]
 
         agent_scores = []
@@ -227,7 +227,7 @@ class HouseholdAgent(mesa.Agent):
             rent_score = -rent_estimate / max(self.income, 1.0)
         agent_scores.append(("rent", rent_score))
 
-        max_affordable = credit.max_affordable_price(self.cash, self.income)
+        max_affordable = credit.household_max_price(self.cash, self.income)
         normalized = []
         for label, score in agent_scores:
             if label in ("buy", "buy-to-let") and max_affordable > 0:
@@ -295,7 +295,7 @@ class HouseholdAgent(mesa.Agent):
         deposit = price * (1.0 - ltv)
 
         # At this point bids should have been credit-checked; assert feasibility
-        if self.cash < deposit:
+        if self.cash < deposit - 1e-9:
             raise RuntimeError(
                 f"Buyer {self.unique_id} cannot cover deposit {deposit:.2f}; "
                 "bid/feasibility logic failed."
@@ -467,7 +467,7 @@ class HouseholdAgent(mesa.Agent):
     def _wtp_for_property(self, prop, credit, purpose="buy"):
         cfg = self.model.config
         base_rent = self._local_rent_estimate()
-        ceiling = credit.max_affordable_price(self.cash, self.income)
+        ceiling = credit.household_max_price(self.cash, self.income)
 
         if purpose == "buy":
             return household_buy_wtp(
@@ -562,15 +562,16 @@ class InstitutionalAgent(mesa.Agent):
     # ------------------------------------------------------------------
 
     def choose_action(self, purchase_candidates):
-        ltv = self.model.credit.inst_ltv
+        credit = self.model.credit
+        ltv = credit.inst_ltv
         cfg = self.model.config
         effective_rate = self.funding_rate + cfg.agent_init.inst_required_return
 
         rents_list = [p.current_rent for p in self.model.properties if p.current_rent is not None]
         market_rent = float(np.mean(rents_list)) if rents_list else 0.0
 
-        feasible = [p for p in purchase_candidates
-                    if p.estimated_value <= self.cash / max(1e-9, 1.0 - ltv)]
+        max_price = credit.institution_max_price(self.cash)
+        feasible = [p for p in purchase_candidates if p.estimated_value <= max_price]
 
         def _rent(p):
             return estimate_market_rent(p.quality, market_rent, cfg.valuation.quality_sensitivity)
@@ -636,7 +637,7 @@ class InstitutionalAgent(mesa.Agent):
             ltv = origination_ltv
 
         deposit = price * (1.0 - ltv)
-        if self.cash < deposit:
+        if self.cash < deposit - 1e-9:
             raise RuntimeError(
                 f"Institution {self.unique_id} cannot cover deposit {deposit:.2f}; "
                 "bid/financing logic failed."
@@ -742,7 +743,6 @@ class InstitutionalAgent(mesa.Agent):
             base_rent, self.funding_rate,
             cfg.agent_init.inst_required_return,
             self.expected_price_growth,
-            self.cash, cfg.credit.inst_ltv,
         )
 
     def step(self):

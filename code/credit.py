@@ -32,8 +32,11 @@ class CreditEnvironment:
         balance = P * ((1 + r) ** n - (1 + r) ** t) / ((1 + r) ** n - 1)
         return max(0.0, balance)
 
-    def max_affordable_price(self, cash, annual_income):
-        deposit_ceiling = cash / (1.0 - self.ltv_limit)
+    def household_max_price(self, cash, annual_income, ltv=None):
+        """Max purchase price for a household (deposit + DTI constraints)."""
+        if ltv is None:
+            ltv = self.ltv_limit
+        deposit_ceiling = cash / (1.0 - ltv)
         monthly_income = annual_income / 12.0
         max_payment = self.dti_limit * monthly_income
         r = self.mortgage_rate
@@ -42,6 +45,11 @@ class CreditEnvironment:
             max_principal = max_payment * n
         else:
             max_principal = max_payment * ((1 + r) ** n - 1) / (r * (1 + r) ** n)
-        income_ceiling = max_principal / self.ltv_limit
-
+        income_ceiling = max_principal / ltv
         return min(deposit_ceiling, income_ceiling)
+
+    def institution_max_price(self, cash):
+        """Max purchase price for an institution (deposit-only constraint)."""
+        if self.inst_ltv >= 1.0:
+            return float("inf")
+        return cash / (1.0 - self.inst_ltv)

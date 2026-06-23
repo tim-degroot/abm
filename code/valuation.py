@@ -127,17 +127,11 @@ def institutional_wtp(
     funding_rate: float,
     required_return: float,
     expected_growth: float,
-    cash: float,
-    ltv: float,
 ) -> float:
-    """WTP for an institutional investor, capped by equity."""
+    """WTP for an institutional investor (perpetuity valuation, no credit cap)."""
     net_rent = estimate_market_rent(quality, base_rent, quality_sensitivity)
     effective_rate = funding_rate + required_return
-    wtp = investor_wtp(net_rent, effective_rate, expected_growth)
-    if ltv < 1.0:
-        max_price = cash / max(1e-9, 1.0 - ltv)
-        wtp = min(wtp, max_price)
-    return wtp
+    return investor_wtp(net_rent, effective_rate, expected_growth)
 
 
 def estimate_market_rent(
