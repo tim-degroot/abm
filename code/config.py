@@ -56,14 +56,14 @@ class PropertyInitConfig(BaseModel):
     # Fraction of households initially allocated an owned home. Lowered from the
     # legacy 0.96 (which, combined with zone-matching failures, left the market
     # ~50% vacant) to a value consistent with the report's ~65% ownership target.
-    init_ownership_prob: float = Field(0.70, ge=0, le=1)
+    init_ownership_prob: float = Field(0.90, ge=0, le=1)
 
 
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     income_mean: float = Field(30_000.0, gt=0)
     income_sigma: float = Field(0.5, ge=0)
-    wealth_income_mult_low: float = Field(0, ge=0)
+    wealth_income_mult_low: float = Field(0.0, ge=0) # 4.0
     wealth_income_mult_high: float = Field(25.0, ge=0)
     # Spread of *legacy* origination LTVs for the starting mortgage book only.
     # New mortgages during the run use the policy/credit LTV (see credit.py), not
@@ -72,16 +72,14 @@ class AgentInitConfig(BaseModel):
     ltv_dist_high: float = Field(0.85, ge=0, le=1)
     # Household risk-aversion coefficient gamma ~ LogNormal(mu, sigma). Enters
     # behaviour as a risk *loading* on expected growth: g -> g - gamma * sigma_g.
-    risk_aversion_mu: float = -1.0
+    risk_aversion_mu: float = -1.0 # -0.3
     risk_aversion_sigma: float = Field(0.5, ge=0)
     inst_cash_low: float = Field(1_500_000.0, ge=0)
-    inst_cash_high: float = Field(3_500_000.0, ge=0)
-    inst_required_return: float = Field(0.0003, ge=0)  # monthly premium over funding
+    inst_cash_high: float = Field(5_000_000.0, ge=0)
+    inst_required_return: float = Field(0.0015, ge=0)  # monthly, 1.8% APR
     inst_min_yield: float = Field(0.04, ge=0)
     # Loss-aversion coefficient lambda > 1 used in the seller's reservation price.
-    # Larger for owner-occupiers than for landlords (Genesove & Mayer 2001).
     loss_aversion: float = Field(1.30, ge=0)
-    loss_aversion_landlord: float = Field(1.15, ge=0)
 
 
 class CreditConfig(BaseModel):
@@ -89,9 +87,9 @@ class CreditConfig(BaseModel):
     mortgage_rate: float = Field(0.00308, ge=0)  # monthly, ~3.7% APR
     ltv_limit: float = Field(0.9, ge=0, le=1)
     dti_limit: float = Field(0.33, ge=0, le=1)
-    loan_term_months: int = Field(360, gt=0)
-    btl_funding_rate: float = Field(0.005, ge=0)
-    btl_ltv: float = Field(0.75, ge=0, le=1)
+    loan_term_months: int = Field(300, gt=0)
+    btl_funding_rate: float = Field(0.008, ge=0)
+    btl_ltv: float = Field(0.50, ge=0, le=1)
     inst_funding_rate: float = Field(0.0045, ge=0)
     inst_ltv: float = Field(0.60, ge=0, le=1)
 
@@ -154,7 +152,7 @@ class MacroConfig(BaseModel):
     recession_mean: float = -0.001667
     recession_sd: float = Field(0.00866, ge=0)
     # Risk-free monthly rate, used as the institutional outside option.
-    risk_free_rate: float = Field(0.002, ge=0)
+    risk_free_rate: float = Field(0.00308, ge=0) # mortgage rate, ~3.7% APR
 
 
 class Config(BaseModel):

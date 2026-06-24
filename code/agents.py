@@ -97,6 +97,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
         self.home_zone = home_zone
         self.owned_properties: set[int] = set()
         self.home_property: int | None = None  # owned OR rented, or None if unhoused
+        self.rental_income_monthly: float = 0.0  # total rent received this step
 
         ecfg = model.config.expectations
         self.expected_price_growth = ecfg.init_price_growth
@@ -153,7 +154,8 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
         """Owner-occupier WTP for living in `prop` (risk-adjusted, credit-capped)."""
         cfg = self.model.config
         credit = self.model.credit
-        ceiling = credit.household_max_price(self.cash, self.income)
+        total_income = self.income + self.rental_income_monthly * 12
+        ceiling = credit.household_max_price(self.cash, total_income, self.mortgage_payment_due())
         return val.household_buy_wtp(
             prop.quality,
             cfg.valuation.quality_value_scale,
@@ -168,7 +170,8 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
         """Buy-to-let WTP (risk-adjusted on price growth, credit-capped)."""
         cfg = self.model.config
         credit = self.model.credit
-        ceiling = credit.btl_max_price(self.cash)
+        total_income = self.income + self.rental_income_monthly * 12
+        ceiling = credit.btl_max_price(self.cash, total_income, self.mortgage_payment_due())
         return val.household_btl_wtp(
             prop.quality,
             cfg.valuation.quality_sensitivity,
@@ -274,7 +277,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
                 default=0.0,
             )
 
-        buy_ceiling = credit.household_max_price(self.cash, self.income)
+        buy_ceiling = credit.household_max_price(self.cash, self.income + self.rental_income_monthly * 12, self.mortgage_payment_due())
         affordable_buy = [p for p in purchase_candidates if p.estimated_value <= buy_ceiling]
         if affordable_buy:
             # Surplus of best buy = (consumption value capitalised) proxy: use WTP
@@ -284,7 +287,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             )
             values["buy"] = best_buy
 
-        btl_ceiling = credit.btl_max_price(self.cash)
+        btl_ceiling = credit.btl_max_price(self.cash, self.income + self.rental_income_monthly * 12, self.mortgage_payment_due())
         affordable_btl = [p for p in purchase_candidates if p.estimated_value <= btl_ceiling]
         if affordable_btl:
             best_btl = max(
@@ -384,6 +387,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
 
     def receive_rent(self, monthly_rent):
         self.cash += monthly_rent
+        self.rental_income_monthly += monthly_rent
 
     def pay_rent(self, monthly_rent):
         self.cash -= monthly_rent

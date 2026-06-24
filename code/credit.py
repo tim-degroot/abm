@@ -79,29 +79,44 @@ class CreditEnvironment:
 
     # -- affordability ceilings (one per class) ---------------------------------
 
-    def household_max_price(self, cash: float, annual_income: float) -> float:
+    def household_max_price(self, cash: float, annual_income: float, existing_monthly_payments: float = 0.0) -> float:
         """Max price a household can pay: min of deposit and DTI ceilings.
 
-        Uses the household mortgage rate and the household LTV limit.
+        DTI ceiling after reserving for existing debt payments (symmetric for
+        owner-occupier and BTL purchases).
         """
         ltv = self.ltv_limit
         deposit_ceiling = cash / (1.0 - ltv) if ltv < 1.0 else float("inf")
         monthly_income = annual_income / 12.0
-        max_payment = self.dti_limit * monthly_income
+        max_new_payment = max(0.0, self.dti_limit * monthly_income - existing_monthly_payments)
         r = self.mortgage_rate
         n = self.loan_term_months
         if r == 0:
-            max_principal = max_payment * n
+            max_principal = max_new_payment * n
         else:
-            max_principal = max_payment * ((1 + r) ** n - 1) / (r * (1 + r) ** n)
+            max_principal = max_new_payment * ((1 + r) ** n - 1) / (r * (1 + r) ** n)
         income_ceiling = max_principal / ltv if ltv > 0 else float("inf")
         return max(0.0, min(deposit_ceiling, income_ceiling))
 
-    def btl_max_price(self, cash: float) -> float:
-        """Max price for a buy-to-let purchase (deposit constraint at btl_ltv)."""
-        if self.btl_ltv >= 1.0:
-            return float("inf")
-        return max(0.0, cash / (1.0 - self.btl_ltv))
+    def btl_max_price(self, cash: float, annual_income: float = 0.0, existing_monthly_payments: float = 0.0) -> float:
+        """Max price for a buy-to-let purchase: min of deposit and DTI ceilings.
+
+        Symmetric with household_max_price — same DTI limit, same amortisation
+        formula, same existing-debt reservation — but using the BTL funding rate
+        and LTV.
+        """
+        ltv = self.btl_ltv
+        deposit_ceiling = cash / (1.0 - ltv) if ltv < 1.0 else float("inf")
+        monthly_income = annual_income / 12.0
+        max_new_payment = max(0.0, self.dti_limit * monthly_income - existing_monthly_payments)
+        r = self.btl_funding_rate
+        n = self.loan_term_months
+        if r == 0:
+            max_principal = max_new_payment * n
+        else:
+            max_principal = max_new_payment * ((1 + r) ** n - 1) / (r * (1 + r) ** n)
+        income_ceiling = max_principal / ltv if ltv > 0 else float("inf")
+        return max(0.0, min(deposit_ceiling, income_ceiling))
 
     def institution_max_price(self, cash: float) -> float:
         """Max price for an institution (deposit constraint at inst_ltv)."""
@@ -109,12 +124,12 @@ class CreditEnvironment:
             return float("inf")
         return max(0.0, cash / (1.0 - self.inst_ltv))
 
-    def max_price(self, purpose: str, cash: float, annual_income: float = 0.0) -> float:
+    def max_price(self, purpose: str, cash: float, annual_income: float = 0.0, existing_monthly_payments: float = 0.0) -> float:
         """Unified affordability ceiling by purpose."""
         if purpose == "buy":
-            return self.household_max_price(cash, annual_income)
+            return self.household_max_price(cash, annual_income, existing_monthly_payments)
         if purpose == "buy-to-let":
-            return self.btl_max_price(cash)
+            return self.btl_max_price(cash, annual_income, existing_monthly_payments)
         if purpose in ("acquire", "institution"):
             return self.institution_max_price(cash)
         raise ValueError(f"Unknown purpose for max price: {purpose!r}")

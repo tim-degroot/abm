@@ -220,19 +220,14 @@ class HousingModel(mesa.Model):
                 by_zone[prop.zone].remove(prop)
                 hh.home_zone = prop.zone
 
-        # Remaining stock -> a SMALL fraction to institutions as rentals, the rest
-        # held by households as let property (so the market is not 50% institution).
+        # Remaining stock -> all to institutions (no household landlords at init).
+        # Institutions will sell when their required return isn't met, creating
+        # supply for households to buy during the simulation.
         leftover = [p for plist in by_zone.values() for p in plist if p.owner_id is None]
         self.rng.shuffle(leftover)
-        n_inst_units = int(0.15 * len(self.properties))  # institutional share target
         for k, prop in enumerate(leftover):
-            if k < n_inst_units and institutions:
-                inst = institutions[k % len(institutions)]
-                self._assign_initial_property(inst, prop, is_home=False, is_household=False)
-            else:
-                # give to a random owner-occupier household as an investment let
-                landlord = households[self.rng.integers(len(households))]
-                self._assign_initial_property(landlord, prop, is_home=False, is_household=True)
+            inst = institutions[k % len(institutions)]
+            self._assign_initial_property(inst, prop, is_home=False, is_household=False)
 
         # House the still-unhoused via an initial rental auction.
         self._run_rental_market(
@@ -420,6 +415,9 @@ class HousingModel(mesa.Model):
 
     # -------------------------------------------------------------- rent / lease
     def _service_rents(self, market_rent):
+        for a in self.agents:
+            if isinstance(a, HouseholdAgent):
+                a.rental_income_monthly = 0.0
         for prop in self.properties:
             if prop.occupant_id is None or prop.occupant_id == prop.owner_id:
                 continue
@@ -535,7 +533,9 @@ class HousingModel(mesa.Model):
             if chosen is None:
                 continue
             bid = agent.compute_bid(chosen, purpose, market_rent)
-            ceiling = self.credit.max_price(purpose, agent.cash, getattr(agent, "income", 0.0))
+            total_income = getattr(agent, "income", 0.0) + getattr(agent, "rental_income_monthly", 0.0) * 12
+            existing = getattr(agent, "mortgage_payment_due", lambda: 0.0)()
+            ceiling = self.credit.max_price(purpose, agent.cash, total_income, existing)
             bid = min(bid, ceiling)
             if bid <= 0:
                 continue
@@ -543,7 +543,9 @@ class HousingModel(mesa.Model):
             market.submit_bid(chosen.id, agent.unique_id, bid, btype, purpose)
 
     def _purchase_feasible(self, agent, prop, purpose):
-        ceiling = self.credit.max_price(purpose, agent.cash, getattr(agent, "income", 0.0))
+        total_income = getattr(agent, "income", 0.0) + getattr(agent, "rental_income_monthly", 0.0) * 12
+        existing = getattr(agent, "mortgage_payment_due", lambda: 0.0)()
+        ceiling = self.credit.max_price(purpose, agent.cash, total_income, existing)
         if ceiling <= 0:
             return False
         ltv = self.credit.origination_ltv(purpose)
