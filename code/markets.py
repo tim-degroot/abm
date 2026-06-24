@@ -1,12 +1,21 @@
-"""Vickrey (second-price sealed-bid) auction markets for ownership and rentals."""
+"""Sealed-bid second-price (Vickrey) auction markets.
+
+Ownership auctions enforce a seller reservation price (the loss-aversion-adjusted
+reservation from agents.reservation_price). Rental auctions have NO reservation
+(landlords let to the highest bidder); rentals also clear sequentially so a
+tenant who wins one unit is removed from the remaining auctions in the round.
+
+Truthful bidding is weakly dominant in a second-price auction, so submitted bids
+equal valuations and the winning (marginal) bidder reveals the clearing price.
+"""
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 
 
 @dataclass
 class Transaction:
-    """Completed ownership transfer."""
-
     step: int
     property_id: int
     buyer_id: int
@@ -14,13 +23,11 @@ class Transaction:
     price: float
     winning_bid: float
     buyer_type: str
-    origination_ltv: float | None = None
+    purpose: str = "buy"
 
 
 @dataclass
 class RentalTransaction:
-    """Completed rental agreement."""
-
     step: int
     property_id: int
     tenant_id: int
@@ -29,159 +36,94 @@ class RentalTransaction:
     winning_rent_bid: float
 
 
-class BaseMarket:
-    """
-    Vickrey auction for a single step.
-    """
+class OwnershipMarket:
+    """Vickrey auction for ownership transfers, with seller reservation prices."""
 
     def __init__(self, step: int):
         self.step = step
         self._listings: dict = {}
 
     def list_property(self, property_id: int, owner_id: int, reservation: float) -> None:
-        """Register a property with a minimum reservation price."""
         self._listings[property_id] = {
             "owner_id": owner_id,
             "reservation": reservation,
             "bids": [],
         }
 
-    def submit_bid(
-        self,
-        property_id: int,
-        bidder_id: int,
-        amount: float,
-        bidder_type: str | None = None,
-        origination_ltv: float | None = None,
-    ) -> None:
-        """Record a bid. Silently dropped if amount <= 0 or property unknown."""
+    def submit_bid(self, property_id, bidder_id, amount, bidder_type=None, purpose="buy") -> None:
         if property_id not in self._listings or amount <= 0:
             return
         self._listings[property_id]["bids"].append(
-            {
-                "bidder_id": bidder_id,
-                "amount": amount,
-                "bidder_type": bidder_type,
-                "origination_ltv": origination_ltv,
-            }
+            {"bidder_id": bidder_id, "amount": amount, "bidder_type": bidder_type, "purpose": purpose}
         )
 
-    def resolve(self) -> list:
-        """Settle all auctions."""
+    def resolve(self) -> list[Transaction]:
         transactions = []
-        for property_id, listing in self._listings.items():
+        for pid, listing in self._listings.items():
             reservation = listing["reservation"]
             bids = listing["bids"]
             if not bids:
                 continue
-
-            sorted_bids = sorted(bids, key=lambda b: b["amount"], reverse=True)
-            top_bid = sorted_bids[0]
-
-            if top_bid["amount"] <= 0 or top_bid["amount"] < reservation:
-                continue
-
-            if len(sorted_bids) >= 2:
-                price = max(sorted_bids[1]["amount"], reservation)
-            else:
-                price = max(top_bid["amount"], reservation)
-
-            assert price <= top_bid["amount"], (
-                f"Vickrey invariant violated: price={price} > "
-                f"top_bid={top_bid['amount']} for property {property_id}"
+            ordered = sorted(bids, key=lambda b: b["amount"], reverse=True)
+            top = ordered[0]
+            if top["amount"] < reservation:
+                continue  # best bid below the seller's reservation; no sale
+            second = ordered[1]["amount"] if len(ordered) >= 2 else top["amount"]
+            price = max(second, reservation)
+            price = min(price, top["amount"])  # Vickrey: never above the winning bid
+            transactions.append(
+                Transaction(
+                    step=self.step, property_id=pid, buyer_id=top["bidder_id"],
+                    seller_id=listing["owner_id"], price=price, winning_bid=top["amount"],
+                    buyer_type=top["bidder_type"], purpose=top.get("purpose", "buy"),
+                )
             )
-            transactions.append(self._create_transaction(property_id, listing, top_bid, price))
-
         return transactions
 
-    def _create_transaction(self, property_id: int, listing: dict, top_bid: dict, price: float):
-        """Override in subclass to return the correct record type."""
-        raise NotImplementedError
 
+class RentalMarket:
+    """Vickrey rental auction; no reservation; sequential tenant de-duplication."""
 
-class OwnershipMarket(BaseMarket):
-    """Vickrey auction producing Transaction records for ownership."""
+    def __init__(self, step: int):
+        self.step = step
+        self._listings: dict = {}
 
-    def _create_transaction(
-        self, property_id: int, listing: dict, top_bid: dict, price: float
-    ) -> Transaction:
-        return Transaction(
-            step=self.step,
-            property_id=property_id,
-            buyer_id=top_bid["bidder_id"],
-            seller_id=listing["owner_id"],
-            price=price,
-            winning_bid=top_bid["amount"],
-            buyer_type=top_bid["bidder_type"],
-            origination_ltv=top_bid.get("origination_ltv"),
-        )
+    def list_property(self, property_id: int, owner_id: int) -> None:
+        self._listings[property_id] = {"owner_id": owner_id, "bids": []}
 
+    def submit_bid(self, property_id, bidder_id, amount) -> None:
+        if property_id not in self._listings or amount <= 0:
+            return
+        self._listings[property_id]["bids"].append({"bidder_id": bidder_id, "amount": amount})
 
-class RentalMarket(BaseMarket):
-    """Vickrey auction producing RentalTransaction records, with tenant dedup."""
-
-    def _create_transaction(
-        self, property_id: int, listing: dict, top_bid: dict, price: float
-    ) -> RentalTransaction:
-        return RentalTransaction(
-            step=self.step,
-            property_id=property_id,
-            tenant_id=top_bid["bidder_id"],
-            landlord_id=listing["owner_id"],
-            monthly_rent=price,
-            winning_rent_bid=top_bid["amount"],
-        )
-
-    def resolve(self, rng=None):
-        """
-        Sequential rental clearing. Households may bid on multiple feasible rentals. Once a household wins
-        one rental, it is removed from later rental auctions in the same clearing
-        round.
-        """
-        property_ids = sorted(
+    def resolve(self) -> list[RentalTransaction]:
+        # Process the most-contested listings first; a tenant who wins is removed
+        # from later auctions this round.
+        order = sorted(
             self._listings.keys(),
-            key=lambda pid: max(
-                (b["amount"] for b in self._listings[pid]["bids"]),
-                default=0,
-            ),
+            key=lambda pid: max((b["amount"] for b in self._listings[pid]["bids"]), default=0.0),
             reverse=True,
         )
-
-        if rng is not None and len(property_ids) > 1:
-            if hasattr(rng, "permutation"):
-                order = rng.permutation(len(property_ids))
-                property_ids = [property_ids[int(i)] for i in order]
-            elif hasattr(rng, "shuffle"):
-                rng.shuffle(property_ids)
-
         transactions = []
-        assigned_tenants = set()
-
-        for property_id in property_ids:
-            listing = self._listings[property_id]
-            reservation = listing["reservation"]
-
-            bids = [
-                b for b in listing["bids"]
-                if b["bidder_id"] not in assigned_tenants
-            ]
+        assigned: set[int] = set()
+        for pid in order:
+            listing = self._listings[pid]
+            bids = [b for b in listing["bids"] if b["bidder_id"] not in assigned]
             if not bids:
                 continue
-
-            sorted_bids = sorted(bids, key=lambda b: b["amount"], reverse=True)
-            top_bid = sorted_bids[0]
-
-            if top_bid["amount"] <= 0 or top_bid["amount"] < reservation:
-                continue
-
-            if len(sorted_bids) >= 2:
-                price = max(sorted_bids[1]["amount"], reservation)
-            else:
-                price = max(top_bid["amount"], reservation)
-
+            ordered = sorted(bids, key=lambda b: b["amount"], reverse=True)
+            top = ordered[0]
+            second = ordered[1]["amount"] if len(ordered) >= 2 else top["amount"]
+            rent = min(top["amount"], second)  # second-price, no reservation
             transactions.append(
-                self._create_transaction(property_id, listing, top_bid, price)
+                RentalTransaction(
+                    step=self.step, property_id=pid, tenant_id=top["bidder_id"],
+                    landlord_id=listing["owner_id"], monthly_rent=rent,
+                    winning_rent_bid=top["amount"],
+                )
             )
-            assigned_tenants.add(top_bid["bidder_id"])
-
+            assigned.add(top["bidder_id"])
         return transactions
+
+
+__all__ = ["Transaction", "RentalTransaction", "OwnershipMarket", "RentalMarket"]

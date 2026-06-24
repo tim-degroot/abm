@@ -1,42 +1,91 @@
+"""The credit environment.
+
+Centralises all financing logic so that each agent class faces one consistent,
+explicit constraint set, and so that the credit *levers* (rates, LTVs, DTI) live
+in exactly one place for the policy experiments and the sensitivity analysis to
+vary.
+
+Key fixes vs. the legacy version:
+  * Every CreditConfig field is plumbed through (btl_funding_rate / btl_ltv were
+    silently dropped before).
+  * `rate` is a *mandatory* argument of the payment/principal helpers, so a
+    household rate can never be silently applied to an institution.
+  * Origination LTV is a config/policy lever per class (household / BTL /
+    institution), not a random draw at bid time.
+"""
+
+from __future__ import annotations
+
 from config import CreditConfig
 
 
 class CreditEnvironment:
+    """Mutable snapshot of credit conditions; policies may replace it mid-run."""
+
     def __init__(self, **kwargs):
         cfg = CreditConfig()
         self.mortgage_rate = kwargs.get("mortgage_rate", cfg.mortgage_rate)
         self.ltv_limit = kwargs.get("ltv_limit", cfg.ltv_limit)
         self.dti_limit = kwargs.get("dti_limit", cfg.dti_limit)
         self.loan_term_months = kwargs.get("loan_term_months", cfg.loan_term_months)
+        self.btl_funding_rate = kwargs.get("btl_funding_rate", cfg.btl_funding_rate)
+        self.btl_ltv = kwargs.get("btl_ltv", cfg.btl_ltv)
         self.inst_funding_rate = kwargs.get("inst_funding_rate", cfg.inst_funding_rate)
         self.inst_ltv = kwargs.get("inst_ltv", cfg.inst_ltv)
 
-    def _update(self):
-        self.__init__()  # re-read config values in case they have changed
+    # -- per-class origination LTV (the policy/config lever, not random) --------
 
-    def monthly_mortgage_payment(self, price, ltv, rate=None):
+    def origination_ltv(self, purpose: str) -> float:
+        """LTV at which a new loan is originated, by purchase purpose."""
+        if purpose == "buy":
+            return self.ltv_limit
+        if purpose == "buy-to-let":
+            return self.btl_ltv
+        if purpose in ("acquire", "institution"):
+            return self.inst_ltv
+        raise ValueError(f"Unknown purpose for origination LTV: {purpose!r}")
+
+    def funding_rate(self, purpose: str) -> float:
+        """Monthly financing rate by purchase purpose."""
+        if purpose == "buy":
+            return self.mortgage_rate
+        if purpose == "buy-to-let":
+            return self.btl_funding_rate
+        if purpose in ("acquire", "institution"):
+            return self.inst_funding_rate
+        raise ValueError(f"Unknown purpose for funding rate: {purpose!r}")
+
+    # -- amortising-loan mechanics (rate is mandatory) --------------------------
+
+    def monthly_mortgage_payment(self, price: float, ltv: float, rate: float) -> float:
         principal = ltv * price
         n = self.loan_term_months
-        r = rate if rate is not None else self.mortgage_rate
+        r = rate
         if r == 0:
             return principal / n
         return principal * r * (1 + r) ** n / ((1 + r) ** n - 1)
 
-    def outstanding_principal(self, original_price, ltv, months_elapsed):
+    def outstanding_principal(
+        self, original_price: float, ltv: float, months_elapsed: int, rate: float
+    ) -> float:
         P = original_price * ltv
         n = self.loan_term_months
-        r = self.mortgage_rate
+        r = rate
         t = min(months_elapsed, n)
         if r == 0:
             return max(0.0, P - (P / n) * t)
         balance = P * ((1 + r) ** n - (1 + r) ** t) / ((1 + r) ** n - 1)
         return max(0.0, balance)
 
-    def household_max_price(self, cash, annual_income, ltv=None):
-        """Max purchase price for a household (deposit + DTI constraints)."""
-        if ltv is None:
-            ltv = self.ltv_limit
-        deposit_ceiling = cash / (1.0 - ltv)
+    # -- affordability ceilings (one per class) ---------------------------------
+
+    def household_max_price(self, cash: float, annual_income: float) -> float:
+        """Max price a household can pay: min of deposit and DTI ceilings.
+
+        Uses the household mortgage rate and the household LTV limit.
+        """
+        ltv = self.ltv_limit
+        deposit_ceiling = cash / (1.0 - ltv) if ltv < 1.0 else float("inf")
         monthly_income = annual_income / 12.0
         max_payment = self.dti_limit * monthly_income
         r = self.mortgage_rate
@@ -45,11 +94,30 @@ class CreditEnvironment:
             max_principal = max_payment * n
         else:
             max_principal = max_payment * ((1 + r) ** n - 1) / (r * (1 + r) ** n)
-        income_ceiling = max_principal / ltv
-        return min(deposit_ceiling, income_ceiling)
+        income_ceiling = max_principal / ltv if ltv > 0 else float("inf")
+        return max(0.0, min(deposit_ceiling, income_ceiling))
 
-    def institution_max_price(self, cash):
-        """Max purchase price for an institution (deposit-only constraint)."""
+    def btl_max_price(self, cash: float) -> float:
+        """Max price for a buy-to-let purchase (deposit constraint at btl_ltv)."""
+        if self.btl_ltv >= 1.0:
+            return float("inf")
+        return max(0.0, cash / (1.0 - self.btl_ltv))
+
+    def institution_max_price(self, cash: float) -> float:
+        """Max price for an institution (deposit constraint at inst_ltv)."""
         if self.inst_ltv >= 1.0:
             return float("inf")
-        return cash / (1.0 - self.inst_ltv)
+        return max(0.0, cash / (1.0 - self.inst_ltv))
+
+    def max_price(self, purpose: str, cash: float, annual_income: float = 0.0) -> float:
+        """Unified affordability ceiling by purpose."""
+        if purpose == "buy":
+            return self.household_max_price(cash, annual_income)
+        if purpose == "buy-to-let":
+            return self.btl_max_price(cash)
+        if purpose in ("acquire", "institution"):
+            return self.institution_max_price(cash)
+        raise ValueError(f"Unknown purpose for max price: {purpose!r}")
+
+
+__all__ = ["CreditEnvironment"]

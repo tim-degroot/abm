@@ -1,184 +1,167 @@
-"""
-Expectations: adaptive belief formation and price forecasting.
+"""Expectation formation: adaptive belief updating and price forecasting.
 
-  - Households: simple adaptive (EWMA) extrapolation of local signals
-  - Institutions: linear regression on market-wide data (rolling window OLS)
+This module is the single source of truth for how signals are turned into
+expectations. The model computes the raw signals once per step (locally per zone
+for households, globally for institutions) and calls these helpers; agents store
+only the resulting expectation values.
+
+  - Households: EWMA (adaptive) extrapolation of local price/rent growth, plus an
+    EWMA estimate of growth volatility used for risk adjustment.
+  - Institutions: rolling-window OLS forecast of the next price change on the
+    market state, plus an EWMA rent-growth signal.
 """
+
+from __future__ import annotations
 
 import numpy as np
 
 
-def init_price_expectation(init_value: float) -> float:
-    return init_value
-
-
-def init_rent_expectation(init_value: float) -> float:
-    return init_value
-
+# ---------------------------------------------------------------------------
+# Core EWMA primitives
+# ---------------------------------------------------------------------------
 
 def adaptive_update(current: float, signal: float, delta: float) -> float:
+    """One EWMA step: E_t = delta * E_{t-1} + (1 - delta) * signal."""
     return delta * current + (1.0 - delta) * signal
 
 
-def price_growth_signal(price_history: list, window: int) -> float:
-    if len(price_history) < 2:
-        return 0.0
-    clean = [p for p in price_history if p is not None and p > 0]
+def growth_signal(history: list[float], window: int) -> float:
+    """Median period-over-period growth rate over the last `window` observations.
+
+    `history` is a list of level observations (prices or rents). Returns 0.0 when
+    there is not enough data. Uses the median to be robust to outliers/None gaps.
+    Note: None entries are treated as missing *observations* (skipped) but the
+    growth is computed only between consecutive present values, so sparse series
+    do not spuriously inflate growth.
+    """
+    clean = [x for x in history if x is not None and x > 0]
     if len(clean) < 2:
         return 0.0
     series = clean[-window:] if len(clean) > window else clean
-    growth_rates = []
-    for i in range(1, len(series)):
-        prev = series[i - 1]
-        if prev > 0:
-            growth_rates.append((series[i] - prev) / prev)
-    if not growth_rates:
+    rates = [
+        (series[i] - series[i - 1]) / series[i - 1]
+        for i in range(1, len(series))
+        if series[i - 1] > 0
+    ]
+    if not rates:
         return 0.0
-    return float(np.median(growth_rates))
+    return float(np.median(rates))
 
 
-def rent_growth_signal(rent_history: list[float], window: int) -> float:
-    return price_growth_signal(rent_history, window)  # same computation, different series
+def volatility_signal(history: list[float], window: int) -> float:
+    """Std of period-over-period growth over the last `window` observations.
 
-
-def household_update_expectations(
-    agent,
-    price_signal: float,
-    rent_signal: float,
-    delta: float,
-    noise_sd: float,
-    rng: np.random.Generator,
-) -> tuple[float, float]:
-    new_price_growth = adaptive_update(agent.expected_price_growth, price_signal, delta)
-    new_rent_growth = adaptive_update(agent.expected_rent_growth, rent_signal, delta)
-    if noise_sd > 0.0:
-        new_price_growth += float(rng.normal(0.0, noise_sd))
-        new_rent_growth += float(rng.normal(0.0, noise_sd))
-    return new_price_growth, new_rent_growth
-
-
-def _build_feature_matrix(state_history: list[dict]) -> np.ndarray:
-    """Build feature matrix from state history for institutional OLS.
-
-    Features per observation (target is price_t - price_{t-1} at row t):
-      const, price_{t-1}, rent_{t-1}, volume_{t-1},
-      is_boom_{t-1}, is_recession_{t-1}, avg_ltv_{t-1}, inst_share_{t-1}
+    Returns 0.0 when there is not enough data to estimate a spread.
     """
-    n = len(state_history)
+    clean = [x for x in history if x is not None and x > 0]
+    if len(clean) < 3:
+        return 0.0
+    series = clean[-window:] if len(clean) > window else clean
+    rates = [
+        (series[i] - series[i - 1]) / series[i - 1]
+        for i in range(1, len(series))
+        if series[i - 1] > 0
+    ]
+    if len(rates) < 2:
+        return 0.0
+    return float(np.std(rates))
+
+
+# ---------------------------------------------------------------------------
+# Institutional rolling-window OLS price forecast
+# ---------------------------------------------------------------------------
+
+def _design_matrix(state_history: list[dict]) -> np.ndarray:
+    """Feature rows for the OLS, one per transition t-1 -> t.
+
+    Features (at t-1): const, price, rent, volume, is_boom, is_recession,
+    avg_ltv, inst_share.
+    """
     rows = []
-    for i in range(1, n):
+    for i in range(1, len(state_history)):
         prev = state_history[i - 1]
         rows.append([
-            1.0,  # constant
-            prev.get("price", 0.0),
-            prev.get("rent", 0.0),
-            prev.get("volume", 0),
+            1.0,
+            prev.get("price", 0.0) or 0.0,
+            prev.get("rent", 0.0) or 0.0,
+            prev.get("volume", 0) or 0,
             1.0 if prev.get("macro") == "Boom" else 0.0,
             1.0 if prev.get("macro") == "Recession" else 0.0,
-            prev.get("avg_ltv", 0.0),
-            prev.get("inst_share", 0.0),
+            prev.get("avg_ltv", 0.0) or 0.0,
+            prev.get("inst_share", 0.0) or 0.0,
         ])
-    return np.array(rows)
+    return np.array(rows, dtype=float)
 
 
-def _build_target_vector(state_history: list[dict]) -> np.ndarray:
-    """Price change as target: Δprice_t = price_t - price_{t-1}."""
-    n = len(state_history)
+def _target_vector(state_history: list[dict]) -> np.ndarray:
+    """Price change Delta price_t = price_t - price_{t-1}."""
     targets = []
-    for i in range(1, n):
-        price_t = state_history[i].get("price", 0.0)
-        price_prev = state_history[i - 1].get("price", 0.0)
-        targets.append(price_t - price_prev)
-    return np.array(targets)
-
-
-def institutional_price_forecast(
-    state_history: list[dict],
-    window: int,
-) -> float:
-    """Fit rolling-window OLS on market state history; predict next price change.
-
-    Returns predicted 1-period-ahead price change (£).  Falls back to the
-    average observed price change if insufficient data (< window+1 periods).
-    """
-    if len(state_history) < window + 1:
-        return _fallback_price_change(state_history)
-
-    X = _build_feature_matrix(state_history[-window - 1:])
-    y = _build_target_vector(state_history[-window - 1:])
-
-    # Latest complete feature vector (at t) to predict Δprice_{t+1}
-    latest = state_history[-1]
-    x_pred = np.array([
-        1.0,
-        latest.get("price", 0.0),
-        latest.get("rent", 0.0),
-        latest.get("volume", 0),
-        1.0 if latest.get("macro") == "Boom" else 0.0,
-        1.0 if latest.get("macro") == "Recession" else 0.0,
-        latest.get("avg_ltv", 0.0),
-        latest.get("inst_share", 0.0),
-    ])
-
-    # OLS via least squares
-    try:
-        coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
-        prediction = float(x_pred @ coeffs)
-    except np.linalg.LinAlgError:
-        prediction = _fallback_price_change(state_history)
-
-    return prediction
+    for i in range(1, len(state_history)):
+        p_t = state_history[i].get("price", 0.0) or 0.0
+        p_prev = state_history[i - 1].get("price", 0.0) or 0.0
+        targets.append(p_t - p_prev)
+    return np.array(targets, dtype=float)
 
 
 def _fallback_price_change(state_history: list[dict]) -> float:
     if len(state_history) < 2:
         return 0.0
-    changes = []
-    for i in range(1, len(state_history)):
-        changes.append(
-            state_history[i].get("price", 0.0) - state_history[i - 1].get("price", 0.0)
-        )
+    changes = [
+        (state_history[i].get("price", 0.0) or 0.0)
+        - (state_history[i - 1].get("price", 0.0) or 0.0)
+        for i in range(1, len(state_history))
+    ]
     return float(np.median(changes)) if changes else 0.0
 
 
-def institutional_rent_growth_signal(state_history: list[dict]) -> float:
-    """Latest rent growth rate from state history."""
-    if len(state_history) < 2:
-        return 0.0
-    r_prev = state_history[-2].get("rent", 0.0)
-    r_curr = state_history[-1].get("rent", 0.0)
-    if r_prev > 0:
-        return (r_curr - r_prev) / r_prev
-    return 0.0
+def institutional_price_forecast(state_history: list[dict], window: int) -> float:
+    """Predicted next-period price *change* (in money) via rolling-window OLS.
 
-
-def institutional_update_expectations(
-    agent,
-    state_history: list[dict],
-    window: int,
-    noise_sd: float,
-    rng: np.random.Generator,
-) -> tuple[float, float]:
-    """Update institutional expectations using rolling OLS price forecast.
-
-    Returns (new_expected_price_growth, new_expected_rent_growth).
+    Falls back to the median recent change when there is too little data or the
+    regression is ill-conditioned.
     """
-    predicted_change = institutional_price_forecast(state_history, window)
+    if len(state_history) < window + 1:
+        return _fallback_price_change(state_history)
 
-    # Convert level-change prediction to monthly growth rate
-    current_price = state_history[-1].get("price", 1.0) if state_history else 1.0
-    price_growth = predicted_change / max(current_price, 1e-9)
+    recent = state_history[-window - 1:]
+    X = _design_matrix(recent)
+    y = _target_vector(recent)
+    if X.shape[0] < X.shape[1]:  # underdetermined
+        return _fallback_price_change(state_history)
 
-    # Rent expectations: use the latest observed rent growth signal
-    if len(state_history) >= 2:
-        r_prev = state_history[-2].get("rent", 0.0)
-        r_curr = state_history[-1].get("rent", 0.0)
-        rent_growth = (r_curr - r_prev) / max(r_prev, 1e-9) if r_prev > 0 else 0.0
-    else:
-        rent_growth = 0.0
+    latest = state_history[-1]
+    x_pred = np.array([
+        1.0,
+        latest.get("price", 0.0) or 0.0,
+        latest.get("rent", 0.0) or 0.0,
+        latest.get("volume", 0) or 0,
+        1.0 if latest.get("macro") == "Boom" else 0.0,
+        1.0 if latest.get("macro") == "Recession" else 0.0,
+        latest.get("avg_ltv", 0.0) or 0.0,
+        latest.get("inst_share", 0.0) or 0.0,
+    ], dtype=float)
 
-    if noise_sd > 0.0:
-        price_growth += float(rng.normal(0.0, noise_sd))
-        rent_growth += float(rng.normal(0.0, noise_sd))
+    try:
+        coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+        return float(x_pred @ coeffs)
+    except np.linalg.LinAlgError:
+        return _fallback_price_change(state_history)
 
-    return price_growth, rent_growth
+
+def institutional_rent_growth_signal(state_history: list[dict], window: int) -> float:
+    """EWMA-style robust rent-growth estimate from the global rent series.
+
+    Replaces the old one-period point estimate with a windowed median growth,
+    consistent with the price-forecast treatment.
+    """
+    rents = [s.get("rent") for s in state_history]
+    return growth_signal(rents, window)
+
+
+__all__ = [
+    "adaptive_update",
+    "growth_signal",
+    "volatility_signal",
+    "institutional_price_forecast",
+    "institutional_rent_growth_signal",
+]

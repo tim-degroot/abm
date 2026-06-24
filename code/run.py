@@ -12,7 +12,14 @@ _RESULTS_DIR = os.path.join(os.path.dirname(__file__), "../results")
 def _parse_args(argv):
     parser = argparse.ArgumentParser(description="Run the housing market ABM.")
     parser.add_argument("--steps", "-s", type=int, help="Number of simulation steps")
-    parser.add_argument("--experiment", action="store_true", help="Run credit-tightening shock experiment")
+    parser.add_argument(
+        "--experiment", "-e", nargs="?", const="tightening", default=None,
+        help="Run a designed credit-shock experiment. Optionally name one of: "
+             "rate-up, rate-down, ltv-tighten, ltv-loosen, tightening "
+             "(default: tightening).",
+    )
+    parser.add_argument("--shock-step", type=int, default=None,
+                        help="Step at which the credit shock is applied.")
     parser.add_argument("--zone-metrics", action="store_true", help="Collect per-zone metrics")
     return parser.parse_args(argv)
 
@@ -20,7 +27,7 @@ def _parse_args(argv):
 def main():
     from config import Config
     from model import HousingModel
-    from policies import CreditShockPolicy
+    from policies import EXPERIMENTS, NoPolicy
     from metrics import collect_zone_metrics
     from plotting import plot_summary
 
@@ -29,10 +36,18 @@ def main():
     cfg = Config()
     steps = args.steps if args.steps is not None else cfg.sim.n_steps
 
-    policy = CreditShockPolicy() if args.experiment else None
+    if args.experiment:
+        name = args.experiment
+        if name not in EXPERIMENTS:
+            raise SystemExit(f"Unknown experiment {name!r}. Choose from: {list(EXPERIMENTS)}")
+        kwargs = {"step": args.shock_step} if args.shock_step is not None else {}
+        policy = EXPERIMENTS[name](**kwargs)
+        label = f"Experiment: {name}"
+    else:
+        policy = NoPolicy()
+        label = "Baseline"
     model = HousingModel(config=cfg, policy=policy)
 
-    label = "Experiment: Credit Tightening Shock" if args.experiment else "Baseline"
     print("=" * 60)
     print(f"Housing Market ABM — {label}")
     print("=" * 60)

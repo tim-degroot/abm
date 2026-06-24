@@ -204,6 +204,22 @@ def vacancy_rate(model):
     return vacant / total
 
 
+def household_net_worth_gini(model):
+    """Gini coefficient of household net worth (wealth-inequality / displacement)."""
+    nws = sorted(
+        max(0.0, a.net_worth) for a in model.agents if isinstance(a, HouseholdAgent)
+    )
+    n = len(nws)
+    total = sum(nws)
+    if n == 0 or total <= 0:
+        return np.nan
+    cum = 0.0
+    for i, w in enumerate(nws, start=1):
+        cum += i * w
+    # Gini = (2 * sum(i*w_i) / (n * sum(w))) - (n + 1)/n
+    return float((2.0 * cum) / (n * total) - (n + 1.0) / n)
+
+
 def collect_zone_metrics(model) -> list[dict]:
     rows = []
     for zone in range(model.n_zones):
@@ -270,4 +286,5 @@ MODEL_REPORTERS = {
     "price_to_rent_ratio": price_to_rent_ratio,
     "avg_loan_to_value": avg_loan_to_value,
     "vacancy_rate": vacancy_rate,
+    "household_net_worth_gini": household_net_worth_gini,
 }

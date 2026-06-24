@@ -1,19 +1,26 @@
-"""
-Main simulation class.
+"""Main simulation: the HousingModel and its monthly step.
 
-Orchestrates initalisation and the economic loop each step:
-  income_evolution
-  → expectations
-  → valuation
-  → action selection
-  → property selection
-  → bidding
-  → auction
-  → ownership/rental transfers + balance-sheet updates
-  → mortgage servicing
-  → mark-to-market asset revaluation
-  → expectation update
+Step order (single, documented schedule):
+  1. policy hook (apply any scheduled credit shock)
+  2. income evolution (fixed macro regime)
+  3. rent servicing + tenancy ageing + lease expiry
+  4. mark-to-market revaluation
+  5. EXPECTATIONS UPDATE  <-- single source of truth (bounded-vision local signals
+     for households, global signals + rolling OLS for institutions)
+  6. action selection (logit over expected action values)
+  7. ownership auction -> apply
+  8. rental auction (losers + renters fall through) -> apply
+  9. mortgage servicing
+ 10. record history + collect metrics
+
+Key design choices:
+  * No stochastic macro transition; the regime is fixed and credit shocks are
+    designed experiments applied via the policy layer.
+  * Origination LTV is the policy/config lever per purpose, never random.
+  * Households see only their own zone neighbourhood (bounded vision).
 """
+
+from __future__ import annotations
 
 import mesa
 import numpy as np
@@ -26,298 +33,154 @@ from properties import Property
 from credit import CreditEnvironment
 from markets import OwnershipMarket, RentalMarket
 from agents import HouseholdAgent, InstitutionalAgent
-from expectations import price_growth_signal, rent_growth_signal
+import expectations as exp
 from metrics import MODEL_REPORTERS
 
 
 class HousingModel(mesa.Model):
-    def __init__(self, config, policy=None):
-        self.config = config
+    def __init__(self, config: Config | None = None, policy=None):
+        self.config = config if config is not None else Config()
         cfg = self.config
+        super().__init__(rng=np.random.default_rng(cfg.sim.seed))
 
-        super().__init__(rng=np.random.default_rng(cfg.sim.seed))  # set rng
-
-        # Create grid and housing
         self.n_households = cfg.sim.n_households
         self.n_institutions = cfg.sim.n_institutions
         self.grid_rows = cfg.spatial.grid_rows
         self.grid_cols = cfg.spatial.grid_cols
         self.n_zones = cfg.spatial.n_zones
-        self.house_grid_rows, self.house_grid_cols = self._house_grid_dimensions(
-            cfg.sim.n_properties
-        )
+
+        self.house_grid_rows, self.house_grid_cols = self._house_grid_dimensions(cfg.sim.n_properties)
         self.grid = OrthogonalVonNeumannGrid(
             (self.house_grid_rows, self.house_grid_cols),
-            torus=True,
-            capacity=1,
-            random=self.random,
+            torus=True, capacity=1, random=self.random,
         )
         self.grid.create_property_layer("house_status", default_value=0, dtype=int)
-        self._zone_adjacency = self._build_zone_adjacency(self.grid_rows, self.grid_cols)
+        self._zone_adjacency = self._build_zone_adjacency(
+            self.grid_rows, self.grid_cols, cfg.spatial.search_radius
+        )
         self.properties = self._init_properties(cfg.sim.n_properties, self.n_zones)
         self._property_map = {p.id: p for p in self.properties}
 
-        # Set policy
         self.policy = policy if policy is not None else NoPolicy()
-
-        # Set credit environment
         self.credit = CreditEnvironment(**cfg.credit.model_dump())
+        self.current_macro_state = cfg.macro.initial_state
 
-        # Create agents and initial state
         self._init_agents(cfg.sim.n_households, cfg.sim.n_institutions)
         self._agent_map = {a.unique_id: a for a in self.agents}
 
-        # Per-step registers (must exist before step 0 rental auction)
         self.this_step_transactions = []
         self.this_step_rental_transactions = []
         self.all_transactions = []
         self.all_rental_transactions = []
 
         self._init_ownership_and_rent()
-        self._seed_history()
-        self.current_macro_state = getattr(self.config.macro, "initial_state", "Neutral")
-
-        # Debug logs
-        self._debug_counts = {
-            "rental_listed": 0,
-            "ownership_listed": 0,
-            "rental_bids_submitted": 0,
-            "rental_bids_filtered": 0,
-            "ownership_bids_submitted": 0,
-            "ownership_bids_filtered": 0,
-            "ownership_bid_samples": [],
-            "rental_bid_samples": [],
-        }
-        self._debug_bid_log = []
-        self._debug_rental_bid_log = []
-
-        # Market state history for institutional price forecasts
+        self._price_history: list[float] = []
+        self._rent_history: list[float] = []
         self._state_history: list[dict] = []
+        self._seed_history()
 
         self.datacollector = DataCollector(model_reporters=MODEL_REPORTERS)
         self.datacollector.collect(self)
-        cfg_debug = getattr(self.config, "debug", None)
-        self._debug_bid_logging = True
-
         self._sync_visual_grid()
 
-    # ------------------------------------------------------------------
-    # Spatial
-    # ------------------------------------------------------------------
-
-    def _build_zone_adjacency(self, rows, cols):
-        """
-        2D toroidal grid, von Neumann topology.
-        """
-
-        def zone_id(r, c):
+    # ------------------------------------------------------------------ spatial
+    def _build_zone_adjacency(self, rows, cols, radius):
+        """Map each zone to the set of zones within `radius` (toroidal Chebyshev)."""
+        def zid(r, c):
             return (r % rows) * cols + (c % cols)
 
         adjacency = {}
         for r in range(rows):
             for c in range(cols):
-                z = zone_id(r, c)
-                adjacency[z] = frozenset(
-                    {
-                        z,
-                        zone_id(r - 1, c),  # up
-                        zone_id(r + 1, c),  # down
-                        zone_id(r, c - 1),  # left
-                        zone_id(r, c + 1),  # right
-                    }
-                )
+                neigh = set()
+                for dr in range(-radius, radius + 1):
+                    for dc in range(-radius, radius + 1):
+                        if abs(dr) + abs(dc) <= radius:  # von Neumann ball
+                            neigh.add(zid(r + dr, c + dc))
+                adjacency[zid(r, c)] = frozenset(neigh)
         return adjacency
 
-    def _house_grid_dimensions(self, n_properties):
-        rows = int(np.floor(np.sqrt(n_properties)))
-        while rows > 1 and n_properties % rows != 0:
+    def _house_grid_dimensions(self, n):
+        rows = int(np.floor(np.sqrt(n)))
+        while rows > 1 and n % rows != 0:
             rows -= 1
         if rows <= 1:
-            cols = int(np.ceil(np.sqrt(n_properties)))
-            rows = int(np.ceil(n_properties / cols))
-            return rows, cols
-        cols = n_properties // rows
-        return rows, cols
-
-    def _sync_visual_grid(self):
-        """Keep the toroidal house grid aligned with household occupancy."""
-        for cell in self.grid.all_cells:
-            for agent in list(cell.agents):
-                try:
-                    cell.remove_agent(agent)
-                except Exception:
-                    pass
-                agent.cell = None
-                agent.pos = None
-
-        cells = sorted(self.grid.all_cells, key=lambda cell: cell.coordinate)
-        cell_by_coord = {cell.coordinate: cell for cell in cells}
-
-        for prop, cell in zip(self.properties, cells):
-            prop.grid_coord = cell.coordinate
-
-        for agent in self.agents:
-            if isinstance(agent, HouseholdAgent) and agent.home_property is not None:
-                prop = self._property_map.get(agent.home_property)
-                if prop is None or prop.grid_coord is None:
-                    continue
-                cell = cell_by_coord.get(prop.grid_coord)
-                if cell is None:
-                    continue
-                cell.add_agent(agent)
-                agent.cell = cell
-                agent.pos = cell.coordinate
-
-        self._update_house_status_layer(cells)
-
-    def _update_house_status_layer(self, cells=None):
-        """Encode ownership and occupancy state into a grid property layer."""
-        if not hasattr(self.grid, "set_property"):
-            return
-
-        if cells is None:
-            cells = sorted(self.grid.all_cells, key=lambda cell: cell.coordinate)
-
-        self.grid.set_property("house_status", 0)
-
-        for prop, cell in zip(self.properties, cells):
-            status = self._house_status_for_property(prop)
-            cell.house_status = status
-
-    def _house_status_for_property(self, prop):
-        owner = self._agent_map.get(prop.owner_id)
-        if prop.listed_for_sale:
-            return 6
-        if prop.occupant_id is None:
-            return 5
-        if prop.occupant_id == prop.owner_id:
-            if owner.is_landlord:
-                return 2  # owner-occupied landlord household
-            return 1  # owner-occupied non-landlord
-        if isinstance(owner, HouseholdAgent):
-            return 3  # household-owned rental occupied by tenant
-        if isinstance(owner, InstitutionalAgent):
-            return 4  # institution-owned rental occupied by tenant
+            cols = int(np.ceil(np.sqrt(n)))
+            return int(np.ceil(n / cols)), cols
+        return rows, n // rows
 
     def get_household_search_zones(self, home_zone):
         return self._zone_adjacency[home_zone]
 
-    # ------------------------------------------------------------------
-    # Initialisation
-    # ------------------------------------------------------------------
-
+    # --------------------------------------------------------------- init stock
     def _init_properties(self, n_properties, n_zones):
-        """
-        Generate housing stock within zones.
-        Each zone gets at least floor(n_properties / n_zones) properties,
-        with the remainder distributed one-per-zone from zone 0 up.
-        """
         pcfg = self.config.property_init
         zone_means = self.rng.normal(0.0, pcfg.zone_quality_sd, n_zones)
-
-        # Distribute properties evenly
         base = n_properties // n_zones
         remainder = n_properties % n_zones
         zone_counts = [base + (1 if z < remainder else 0) for z in range(n_zones)]
 
-        raw_qualities = []
-        zone_assignments = []
+        raw_q, zones = [], []
         for z, count in enumerate(zone_counts):
             for _ in range(count):
-                q = zone_means[z] + self.rng.normal(0.0, pcfg.property_residual_sd)
-                raw_qualities.append(q)
-                zone_assignments.append(z)
-
-        q_arr = np.array(raw_qualities)
-        q_std = (q_arr - q_arr.mean()) / (q_arr.std() + 1e-9)
-
-        base_price = pcfg.init_base_price
-        price_sensitivity = pcfg.init_price_quality_sensitivity
+                raw_q.append(zone_means[z] + self.rng.normal(0.0, pcfg.property_residual_sd))
+                zones.append(z)
+        q = np.array(raw_q)
+        q_std = (q - q.mean()) / (q.std() + 1e-9)
 
         props = []
         for i in range(n_properties):
-            anchor = base_price + price_sensitivity * float(q_std[i])
-            prop = Property(
-                id=i,
-                zone=zone_assignments[i],
-                quality=float(q_std[i]),
-                owner_id=None,
-                purchase_anchor_price=anchor,
-                estimated_value=anchor,
-            )
-            props.append(prop)
-
-        cells = sorted(self.grid.all_cells, key=lambda cell: cell.coordinate)
+            anchor = pcfg.init_base_price + pcfg.init_price_quality_sensitivity * float(q_std[i])
+            props.append(Property(
+                id=i, zone=zones[i], quality=float(q_std[i]), owner_id=None,
+                purchase_anchor_price=anchor, estimated_value=anchor,
+            ))
+        cells = sorted(self.grid.all_cells, key=lambda c: c.coordinate)
         for prop, cell in zip(props, cells):
             prop.grid_coord = cell.coordinate
         return props
 
     def _init_agents(self, n_households, n_institutions):
-        """
-        Create agents with heterogeneous attributes.
-        """
         acfg = self.config.agent_init
-        ccfg = self.config.credit
         incomes = self.rng.lognormal(np.log(acfg.income_mean), acfg.income_sigma, n_households)
-        wealth_mult = self.rng.uniform(
-            acfg.wealth_income_mult_low, acfg.wealth_income_mult_high, n_households
-        )
+        wealth_mult = self.rng.uniform(acfg.wealth_income_mult_low, acfg.wealth_income_mult_high, n_households)
         risk_av = self.rng.lognormal(acfg.risk_aversion_mu, acfg.risk_aversion_sigma, n_households)
-
         for i in range(n_households):
-            zone = int(i % self.n_zones)  # distribute evenly across zones
             HouseholdAgent(
-                unique_id=i,
-                model=self,
-                income=float(incomes[i]),
-                cash=float(incomes[i] * wealth_mult[i]),
-                risk_aversion=float(risk_av[i]),
-                home_zone=zone,
+                unique_id=i, model=self, income=float(incomes[i]),
+                cash=float(incomes[i] * wealth_mult[i]), risk_aversion=float(risk_av[i]),
+                home_zone=int(i % self.n_zones),
             )
-
         for j in range(n_institutions):
-            zone = int(j % self.n_zones)
             InstitutionalAgent(
-                unique_id=n_households + j,
-                model=self,
+                unique_id=n_households + j, model=self,
                 cash=float(self.rng.uniform(acfg.inst_cash_low, acfg.inst_cash_high)),
-                funding_rate=ccfg.inst_funding_rate,
             )
 
-    def _draw_origination_ltv(self):
-        """Draw an origination LTV from the configured distribution."""
+    def _legacy_origination_ltv(self):
+        """Random LTV for the STARTING mortgage book only (a spread of legacy loans).
+
+        New mortgages during the run use the policy/config LTV, never this.
+        """
         ai = self.config.agent_init
-        return min(
-            self.credit.ltv_limit,
-            float(self.rng.uniform(ai.ltv_dist_low, ai.ltv_dist_high)),
-        )
+        return min(self.credit.ltv_limit, float(self.rng.uniform(ai.ltv_dist_low, ai.ltv_dist_high)))
 
-    def _assign_property_to_agent(self, agent, prop, is_home, agent_type):
+    def _assign_initial_property(self, agent, prop, is_home, is_household):
         price = prop.estimated_value
-        ltv = self._draw_origination_ltv()
+        ltv = self._legacy_origination_ltv() if is_household else self.credit.inst_ltv
+        rate = self.credit.mortgage_rate if is_household else self.credit.inst_funding_rate
         deposit = price * (1.0 - ltv)
-
-        # Feasibility
-        if agent_type == "household":
-            payment = self.credit.monthly_mortgage_payment(price, ltv)
-            income_ok = payment <= self.credit.dti_limit * agent.income / 12.0
-            if not income_ok:
+        if is_household:
+            payment = self.credit.monthly_mortgage_payment(price, ltv, rate)
+            if payment > self.credit.dti_limit * agent.income / 12.0:
                 return False
-
         if agent.cash < deposit:
             return False
-
-        # Commit
-        if agent_type == "household":  # this should be unified
-            agent.owned_properties.add(prop.id)
-        else:
-            agent.portfolio.add(prop.id)
-
+        agent.owned_properties.add(prop.id)
         agent.cash -= deposit
-        agent._mortgages[prop.id] = (price, ltv, 0)  # (purchase_price, ltv, steps_held)
+        agent._mortgages[prop.id] = (price, ltv, 0, rate)
         agent._housing_asset_value += price
         prop.owner_id = agent.unique_id
-
         if is_home:
             agent.home_property = prop.id
             prop.occupant_id = agent.unique_id
@@ -326,569 +189,511 @@ class HousingModel(mesa.Model):
         return True
 
     def _init_ownership_and_rent(self):
-        """
-        Allocate properties and derive balance sheets.
-        """
         cfg = self.config
-
-        households = sorted(
-            [a for a in self.agents if isinstance(a, HouseholdAgent)],
-            key=lambda h: h.income,
-            reverse=True,
-        )
+        households = [a for a in self.agents if isinstance(a, HouseholdAgent)]
         institutions = [a for a in self.agents if isinstance(a, InstitutionalAgent)]
+        self.rng.shuffle(households)
 
-        # Ownership — random allocation
         available = list(self.properties)
         self.rng.shuffle(available)
+        by_zone: dict[int, list] = {}
+        for p in available:
+            by_zone.setdefault(p.zone, []).append(p)
 
-        self.rng.shuffle(households)
+        # Owner-occupiers: assign a home in the household's own zone where possible,
+        # else any available property, with probability init_ownership_prob.
         for hh in households:
-            if not available:
-                break
             if self.rng.random() > cfg.property_init.init_ownership_prob:
                 continue
-            zone_props = [p for p in available if p.zone == hh.home_zone]
-            if not zone_props:
-                continue
-            prop = zone_props[0]
-            if self._assign_property_to_agent(
-                hh, prop, is_home=True, agent_type="household"
-            ):
-                available.remove(prop)
+            pool = by_zone.get(hh.home_zone) or None
+            prop = None
+            if pool:
+                prop = pool[-1]
+            else:
+                for z, plist in by_zone.items():
+                    if plist:
+                        prop = plist[-1]
+                        break
+            if prop is None:
+                break
+            if self._assign_initial_property(hh, prop, is_home=True, is_household=True):
+                by_zone[prop.zone].remove(prop)
+                hh.home_zone = prop.zone
 
-        for k, prop in enumerate(list(available)):
-            inst = institutions[k % len(institutions)]
-            if self._assign_property_to_agent(
-                inst, prop, is_home=False, agent_type="institution"
-            ):
-                available.remove(prop)
+        # Remaining stock -> a SMALL fraction to institutions as rentals, the rest
+        # held by households as let property (so the market is not 50% institution).
+        leftover = [p for plist in by_zone.values() for p in plist if p.owner_id is None]
+        self.rng.shuffle(leftover)
+        n_inst_units = int(0.15 * len(self.properties))  # institutional share target
+        for k, prop in enumerate(leftover):
+            if k < n_inst_units and institutions:
+                inst = institutions[k % len(institutions)]
+                self._assign_initial_property(inst, prop, is_home=False, is_household=False)
+            else:
+                # give to a random owner-occupier household as an investment let
+                landlord = households[self.rng.integers(len(households))]
+                self._assign_initial_property(landlord, prop, is_home=False, is_household=True)
 
-        # Step 0 rental market — house all unhoused via auction
-        renter_households = [h for h in households if h.home_property is None]
-        if renter_households:
-            rental_market = RentalMarket(step=0)
-            for prop in self.properties:
-                if prop.occupant_id is None and prop.listed_for_rent:
-                    rental_market.list_property(prop.id, prop.owner_id, 0.0)
-            for hh in renter_households:
-                candidates = self._get_rental_candidates(hh)
-                if candidates:
-                    for c in candidates:
-                        rent_bid = hh.compute_rent_bid(c)
-                        if rent_bid > 0:
-                            rental_market.submit_bid(c.id, hh.unique_id, rent_bid)
-            rental_txns = rental_market.resolve()
-            self._apply_rental_transactions(rental_txns)
-
+        # House the still-unhoused via an initial rental auction.
+        self._run_rental_market(
+            [h for h in households if h.home_property is None], step=0, market_rent=self._mean_rent_or_default()
+        )
         self._verify_accounting()
 
+    def _mean_rent_or_default(self):
+        rents = [p.current_rent for p in self.properties if p.current_rent]
+        if rents:
+            return float(np.mean(rents))
+        # default baseline rent ~ consumption value of a median home
+        v = self.config.valuation
+        return v.base_housing_value
+
     def _verify_accounting(self, tol=1.0):
-        """
-        Assert the housing balance sheet is internally consistent at init:
-          - total HousingAssets from properties == sum of agent housing-asset
-            values (no double-counting / orphaned ownership), and
-          - total mortgage debt does not exceed housing assets.
-        """
         props_assets = sum(p.estimated_value for p in self.properties if p.owner_id is not None)
         agent_assets = sum(getattr(a, "_housing_asset_value", 0.0) for a in self.agents)
-        assert abs(props_assets - agent_assets) <= tol, (
-            f"Housing assets mismatch: properties={props_assets:.2f} " f"agents={agent_assets:.2f}"
+        assert abs(props_assets - agent_assets) <= max(tol, 1e-6 * props_assets), (
+            f"Housing assets mismatch: properties={props_assets:.2f} agents={agent_assets:.2f}"
         )
-        debt = 0.0
-        for a in self.agents:
-            for orig, ltv, held in getattr(a, "_mortgages", {}).values():
-                debt += self.credit.outstanding_principal(orig, ltv, held)
-        assert (
-            debt <= props_assets + tol
-        ), f"Mortgage debt {debt:.2f} exceeds housing assets {props_assets:.2f}"
 
     def _seed_history(self):
-        """Seed price history from initial property values."""
         allocated = [p.purchase_anchor_price for p in self.properties if p.owner_id is not None]
-        if allocated:
-            self._price_history = [float(np.mean(allocated))]
-        else:
-            self._price_history = []
+        self._price_history = [float(np.mean(allocated))] if allocated else [self.config.property_init.init_base_price]
+        self._rent_history = [self._mean_rent_or_default()]
+        self._record_state()
 
-    def _plan_distress_sales(self):  # too extreme
-        """
-        Pick forced sales for agents whose cash cannot cover mortgage servicing.
-
-        Properties are sold in ascending expected utility-loss order. When an
-        agent is under servicing pressure, every owned property is listed so
-        the weakest assets can clear first and the agent can avoid default.
-        """
-        plans = {}
-        for agent in self.agents:
-            if not hasattr(agent, "mortgage_payment_due"):
-                continue
-
-            if (agent.mortgage_payment_due() - agent.cash) <= 0:
-                continue
-
-            selected = []
-            for _, prop in agent.distress_sale_candidates():
-                if prop.id not in getattr(
-                    agent, "owned_properties", set()
-                ) and prop.id not in getattr(agent, "portfolio", set()):
-                    continue
-
-                selected.append(prop.id)
-
-            if selected:
-                plans[agent.unique_id] = set(selected)
-
-        return plans
-
-    # ------------------------------------------------------------------
-    # Main Step
-    # ------------------------------------------------------------------
-
+    # ----------------------------------------------------------------- the step
     def step(self):
-        """
-        One model period:
-          1. Policy hooks
-          2. Income evolution
-          3. Service mortgage/rent
-          4. Expire leases
-          5. List properties
-          6. Submit bids
-          7. Clear ownership market
-          8. Clear rental market
-          9. Apply transactions
-        """
+        cfg = self.config
         self.policy.on_step_start(self)
-        ### Fill in update hooks
 
-        self.this_step_transactions = []
-        self.this_step_rental_transactions = []
+        # 2. income evolution (fixed macro regime)
+        mu, sd = self._macro_income_params()
+        for a in self.agents:
+            if isinstance(a, HouseholdAgent):
+                a.evolve_income(mu, sd)
 
-        for agent in self.agents:
-            if isinstance(agent, HouseholdAgent):
-                agent.evolve_income()
+        market_rent = self._mean_rent_or_default()
 
-        self._service_rents()
-
-        self._age_tenancies()
+        # 3. rents, tenancies, leases
+        self._service_rents(market_rent)
         self._expire_leases()
 
+        # 4. mark to market
         self._mark_to_market()
 
-        distress_sales = self._plan_distress_sales()
+        # 5. EXPECTATIONS (single source of truth)
+        self._update_expectations()
 
-        ownership_market = OwnershipMarket(step=self.steps)
-        rental_market = RentalMarket(step=self.steps)
-
+        # 6. action selection
         actions = {}
-        for agent in self.agents:
-            purchase_candidates = self._get_purchase_candidates(agent, listed_only=False)
-            if isinstance(agent, HouseholdAgent):
-                actions[agent.unique_id] = agent.choose_action(purchase_candidates)
-            elif isinstance(agent, InstitutionalAgent):
-                actions[agent.unique_id] = agent.choose_action(purchase_candidates)
+        for a in self.agents:
+            cands = self._purchase_candidates(a, listed_only=False)
+            actions[a.unique_id] = a.choose_action(cands, market_rent)
 
-        self._list_properties(ownership_market, rental_market, actions, distress_sales)
-        self._submit_bids(ownership_market, rental_market, actions)
+        # distress sales (capped) are added to the sell set
+        distress = self._plan_distress_sales(market_rent)
 
-        sale_txns = ownership_market.resolve()
-        rental_txns = rental_market.resolve()
-
+        # 7. ownership auction
+        own_market = OwnershipMarket(step=self.steps)
+        self._list_for_sale(own_market, actions, distress, market_rent)
+        self._submit_purchase_bids(own_market, actions, market_rent)
+        sale_txns = own_market.resolve()
         self._apply_ownership_transactions(sale_txns)
-        self._apply_rental_transactions(rental_txns)
 
-        for agent in self.agents:
-            if getattr(agent, "_mortgages", None):
-                agent.service_mortgages()
+        # 8. rental auction: every household left without a home this period bids
+        #    (the unhoused, plus anyone evicted/lease-expired or who lost the
+        #    ownership round). Already-housed renters do NOT re-enter just to trade
+        #    up: that churn frees one unit while taking another, displacing the
+        #    unhoused without raising occupancy. Housing the unhoused is the point.
+        bought = {t.buyer_id for t in self.this_step_transactions}
+        renters = [
+            a for a in self.agents
+            if isinstance(a, HouseholdAgent)
+            and a.unique_id not in bought
+            and a.home_property is None
+        ]
+        self._list_for_rent(actions)
+        self._run_rental_market(renters, step=self.steps, market_rent=market_rent)
 
+        # 9. mortgage servicing
+        for a in self.agents:
+            if getattr(a, "_mortgages", None):
+                a.service_mortgages()
+
+        # 10. record
+        self._record_state()
         self.datacollector.collect(self)
         self._sync_visual_grid()
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------- macro / income
+    def _macro_income_params(self):
+        mcfg = self.config.macro
+        state = self.current_macro_state
+        if state == "Boom":
+            return mcfg.boom_mean, mcfg.boom_sd
+        if state == "Recession":
+            return mcfg.recession_mean, mcfg.recession_sd
+        return mcfg.neutral_mean, mcfg.neutral_sd
 
-    def _tenant_can_pay_rent(self, tenant, monthly_rent) -> bool:
-        income = getattr(tenant, "income", None)
-        return monthly_rent <= income
+    # ----------------------------------------------------------- expectations
+    def _update_expectations(self):
+        ecfg = self.config.expectations
+        s = ecfg.smoothing
+        w = ecfg.signal_window
+        # Realistic absolute band on the monthly growth RATE (~+/-12%/yr). This is
+        # not a perpetuity stabiliser (the user-cost valuation is already stable);
+        # it just keeps the extrapolated growth rate economically sane.
+        GCAP = 0.0015
 
-    def _service_rents(self):
-        """Collect current rents; tenants who cannot pay vacate immediately."""
+        def clamp(x):
+            return float(max(-GCAP, min(GCAP, x)))
+
+        # Global signals (institutions): growth and growth-rate volatility.
+        g_price = clamp(exp.growth_signal(self._price_history, w))
+        g_rent = clamp(exp.growth_signal(self._rent_history, w))
+        v_price = exp.volatility_signal(self._price_history, w)
+        v_rent = exp.volatility_signal(self._rent_history, w)
+
+        # Institutional forecast (rolling OLS on the market state) -> growth rate.
+        inst_change = exp.institutional_price_forecast(self._state_history, w)
+        cur_price = self._price_history[-1] if self._price_history else 1.0
+        inst_price_growth = clamp(inst_change / max(cur_price, 1e-9))
+        inst_rent_growth = clamp(exp.institutional_rent_growth_signal(self._state_history, w))
+
+        # Per-zone local signals for households (bounded vision).
+        zone_price_growth = self._zone_price_growth(w)
+
+        for a in self.agents:
+            if isinstance(a, HouseholdAgent):
+                local_g = clamp(zone_price_growth.get(a.home_zone, g_price))
+                npg = clamp(exp.adaptive_update(a.expected_price_growth, local_g, s))
+                nrg = clamp(exp.adaptive_update(a.expected_rent_growth, g_rent, s))
+                npv = exp.adaptive_update(a.expected_price_vol, v_price, s)
+                nrv = exp.adaptive_update(a.expected_rent_vol, v_rent, s)
+                if ecfg.household_noise_sd > 0:
+                    npg = clamp(npg + float(self.rng.normal(0.0, ecfg.household_noise_sd)))
+                    nrg = clamp(nrg + float(self.rng.normal(0.0, ecfg.household_noise_sd)))
+                a.set_expectations(npg, nrg, max(0.0, npv), max(0.0, nrv))
+            else:
+                npg = clamp(exp.adaptive_update(a.expected_price_growth, inst_price_growth, s))
+                nrg = clamp(exp.adaptive_update(a.expected_rent_growth, inst_rent_growth, s))
+                if ecfg.inst_noise_sd > 0:
+                    npg = clamp(npg + float(self.rng.normal(0.0, ecfg.inst_noise_sd)))
+                    nrg = clamp(nrg + float(self.rng.normal(0.0, ecfg.inst_noise_sd)))
+                a.set_expectations(npg, nrg, v_price, v_rent)
+
+    def _zone_price_growth(self, window):
+        """Per-zone recent transaction-price growth (bounded-vision signal).
+
+        Falls back silently to the global growth when a zone has too few trades.
+        """
+        out = {}
+        hist = getattr(self, "_zone_price_history", None)
+        if hist is None:
+            return out
+        for z, series in hist.items():
+            out[z] = exp.growth_signal(series, window)
+        return out
+
+    # --------------------------------------------------------------- mark to mkt
+    def _mark_to_market(self):
+        """Nudge estimated values toward the latest MEDIAN transaction price.
+
+        Uses the median (robust to a few very large institutional bids) and moves
+        only a small fraction of the way toward it, so revaluation cannot run away
+        in a positive feedback loop with WTP.
+        """
+        if not self.this_step_transactions:
+            return
+        latest = float(np.median([t.price for t in self.this_step_transactions]))
+        ref = float(np.median([p.estimated_value for p in self.properties]))
+        if ref <= 0 or latest <= 0:
+            return
+        ratio = min(max(latest / ref, 0.8), 1.25)  # clip extreme moves
+        adj = 1.0 + 0.05 * (ratio - 1.0)            # move 5% of the way
+        for p in self.properties:
+            p.estimated_value = max(1.0, p.estimated_value * adj)
+        for a in self.agents:
+            owned = a.owned_properties
+            if owned:
+                a._housing_asset_value = sum(self._property_map[pid].estimated_value for pid in owned)
+
+    # -------------------------------------------------------------- rent / lease
+    def _service_rents(self, market_rent):
         for prop in self.properties:
             if prop.occupant_id is None or prop.occupant_id == prop.owner_id:
                 continue
-
             tenant = self._agent_map.get(prop.occupant_id)
-            rent = prop.current_rent
-            if not self._tenant_can_pay_rent(tenant, rent):
+            landlord = self._agent_map.get(prop.owner_id)
+            rent = prop.current_rent or 0.0
+            if tenant is None or rent > tenant.income:  # cannot afford -> vacate
+                if tenant is not None:
+                    tenant.vacate_rental()
                 prop.occupant_id = None
                 prop.tenancy_months = 0
                 prop.listed_for_rent = True
-                tenant.vacate_rental()
                 continue
-
-            landlord = self._agent_map.get(prop.owner_id)
             tenant.pay_rent(rent)
-            landlord.receive_rent(rent)
-
-    def _age_tenancies(self):
-        for prop in self.properties:
-            if prop.occupant_id is None or prop.occupant_id == prop.owner_id:
-                continue
-            prop.tenancy_months += 1
+            if landlord is not None:
+                landlord.receive_rent(rent)
 
     def _expire_leases(self):
-        """
-        Randomly some rentals each period, subject to a minimum lease term.
-        """
         mcfg = self.config.market
-
         for prop in self.properties:
-            if (
-                prop.occupant_id is None
-                or prop.owner_id is None
-                or prop.occupant_id == prop.owner_id
-            ):
+            if prop.occupant_id is None or prop.owner_id is None or prop.occupant_id == prop.owner_id:
                 continue
-
             prop.tenancy_months += 1
-            prob = (
-                mcfg.normal_exit_prob
-                if prop.tenancy_months >= mcfg.min_tenancy
-                else mcfg.early_exit_prob
-            )
-            if prob <= 0 or self.rng.random() >= prob:
-                continue
+            prob = mcfg.normal_exit_prob if prop.tenancy_months >= mcfg.min_tenancy else mcfg.early_exit_prob
+            if prob > 0 and self.rng.random() < prob:
+                tenant = self._agent_map.get(prop.occupant_id)
+                if tenant is not None:
+                    tenant.vacate_rental()
+                prop.occupant_id = None
+                prop.tenancy_months = 0
+                prop.listed_for_rent = True
 
-            tenant = self._agent_map.get(prop.occupant_id)
-            prop.occupant_id = None
-            prop.tenancy_months = 0
-            prop.listed_for_rent = True
-            tenant.vacate_rental()
-
-    def _mark_to_market(self):
-        """
-        Update estimated_value on all properties, giving agents a continuously updated balance sheet.
-        """
-        growth = price_growth_signal(self._price_history, window=2)
-        growth = 0.0 if growth is None else growth
-
-        for prop in self.properties:
-            prop.estimated_value = prop.estimated_value * (1.0 + growth)
-
-        for agent in self.agents:
-            if isinstance(agent, HouseholdAgent) and agent.owned_properties:
-                agent._housing_asset_value = sum(
-                    self._property_map[pid].estimated_value for pid in agent.owned_properties
-                )
-            elif isinstance(agent, InstitutionalAgent) and agent.portfolio:
-                agent._housing_asset_value = sum(
-                    self._property_map[pid].estimated_value for pid in agent.portfolio
-                )
-
-    def _list_properties(self, ownership_market, rental_market, actions, distress_sales):
-        """
-        Per-property action: list for sale, list for rent, or hold.
-
-        1. All currently listed-for-rent properties are registered on the rental
-           market (preserves auto-listings from tenant departures).
-        2. Ownership entries are managed per-property: only 'sell' clears
-           listed_for_sale and lists the property.
-        3. 'rent_out' on a vacant property adds a rental listing.
-        """
-        for prop in self.properties:
-            prop.listed_for_sale = False
-            if prop.listed_for_rent:
-                rental_market.list_property(prop.id, prop.owner_id, 0.0)
-                self._debug_counts["rental_listed"] += 1
-
-        for agent in self.agents:
-            forced_sales = distress_sales.get(agent.unique_id, set())
-            agent_actions = actions.get(agent.unique_id, {})
-            owned = getattr(agent, "owned_properties", None) or getattr(agent, "portfolio", set())
-
-            for pid in list(owned):
-                prop = self._property_map[pid]
-
-                if pid in forced_sales:
-                    ownership_market.list_property(pid, agent.unique_id, 0.0)
-                    prop.listed_for_sale = True
-                    self._debug_counts["ownership_listed"] += 1
-                    continue
-
-                pp_action = agent_actions.get(pid, "hold")
-
-                if pp_action == "sell":
-                    ownership_market.list_property(pid, agent.unique_id, 0.0)
-                    prop.listed_for_sale = True
-                    self._debug_counts["ownership_listed"] += 1
-                elif pp_action == "rent_out":
-                    if not prop.listed_for_rent:
-                        prop.listed_for_rent = True
-                        rental_market.list_property(pid, agent.unique_id, 0.0)
-                        self._debug_counts["rental_listed"] += 1
-
-    def _submit_bids(self, ownership_market, rental_market, actions):
-        """Buyers and renters submit bids."""
-        submitted_pairs = set()
-        for agent in self.agents:
-            purchase_candidates = self._get_purchase_candidates(agent)
-            action = actions.get(agent.unique_id, {}).get("__agent__")
-
-            if action in ("buy", "buy-to-let", "acquire"):
-                current_ltv = self._draw_origination_ltv()
-                affordable = [
-                    p
-                    for p in purchase_candidates
-                    if p.listed_for_sale and self._purchase_feasible(agent, p, origination_ltv=current_ltv)
-                ]
-                if not affordable:
-                    continue
-                chosen = agent.choose_property(affordable)
-                if chosen is None:
-                    continue
-                bid = min(
-                    agent.compute_bid(chosen),
-                    self._purchase_price_ceiling(agent, origination_ltv=current_ltv),
-                )
-                if bid <= 0:
-                    continue
-                if self._debug_bid_logging:
-                    self._debug_bid_log.append(
-                        {
-                            "step": int(self.steps),
-                            "property_id": int(chosen.id),
-                            "bidder_id": int(agent.unique_id),
-                            "amount": float(bid),
-                            "bidder_type": (
-                                "household"
-                                if isinstance(agent, HouseholdAgent)
-                                else "institution"
-                            ),
-                            "cash": float(agent.cash),
-                            "income": float(getattr(agent, "income", 0.0)),
-                            "expected_price_growth": float(agent.expected_price_growth),
-                            "origination_ltv": float(current_ltv),
-                        }
-                    )
-                bidder_type = (
-                    "household" if isinstance(agent, HouseholdAgent) else "institution"
-                )
-                ownership_market.submit_bid(
-                    chosen.id, agent.unique_id, bid, bidder_type, origination_ltv=current_ltv
-                )
-                submitted_pairs.add((agent.unique_id, chosen.id))
-                self._debug_counts["ownership_bids_submitted"] += 1
-                self._debug_counts["ownership_bid_samples"].append(bid)
-            elif action == "rent":
-                rental_candidates = self._get_rental_candidates(agent)
-                if rental_candidates:
-                    for chosen in rental_candidates:
-                        rent_bid = agent.compute_rent_bid(chosen)
-                        if rent_bid > 0:
-                            if self._debug_bid_logging:
-                                self._debug_rental_bid_log.append(
-                                    {
-                                        "step": int(self.steps),
-                                        "property_id": int(chosen.id),
-                                        "tenant_id": int(agent.unique_id),
-                                        "amount": float(rent_bid),
-                                    }
-                                )
-                            rental_market.submit_bid(
-                                chosen.id,
-                                agent.unique_id,
-                                rent_bid,
-                            )
-                            self._debug_counts["rental_bids_submitted"] += 1
-                            self._debug_counts["rental_bid_samples"].append(rent_bid)
-
-    def _get_purchase_candidates(self, agent, listed_only=True):
-        """Households search locally, institutions see all properties.
-        """
+    # --------------------------------------------------------------- candidates
+    def _purchase_candidates(self, agent, listed_only=True):
         if isinstance(agent, InstitutionalAgent):
-            candidates = [p for p in self.properties if p.owner_id != agent.unique_id]
+            cands = [p for p in self.properties if p.owner_id != agent.unique_id]
         else:
             zones = self.get_household_search_zones(agent.home_zone)
-            candidates = [
-                p for p in self.properties
-                if p.zone in zones and p.owner_id != agent.unique_id
-            ]
-
+            cands = [p for p in self.properties if p.zone in zones and p.owner_id != agent.unique_id]
         if listed_only:
-            candidates = [p for p in candidates if p.listed_for_sale]
+            cands = [p for p in cands if p.listed_for_sale]
+        return cands
 
-        return candidates
-
-    def _purchase_price_ceiling(self, agent, origination_ltv=None):
-        """Highest purchase price an agent can safely bid after servicing."""
-        current_due = agent.mortgage_payment_due() if hasattr(agent, "mortgage_payment_due") else 0.0
-        available = max(0.0, agent.cash - current_due)
-        if isinstance(agent, HouseholdAgent):
-            return self.credit.household_max_price(available, agent.income, ltv=origination_ltv)
-        return self.credit.institution_max_price(available)
-
-    def _purchase_feasible(self, agent, prop, origination_ltv=None):
-        """Check whether agent can afford the property at the price they'd bid."""
-        ltv = origination_ltv if origination_ltv is not None else self.credit.ltv_limit
-        ceiling = self._purchase_price_ceiling(agent, origination_ltv=origination_ltv)
-        bid = agent.compute_bid(prop)
-        effective = min(bid, ceiling)
-        if effective <= 0:
-            return False
-        if isinstance(agent, HouseholdAgent):
-            current_due = agent.mortgage_payment_due() if hasattr(agent, "mortgage_payment_due") else 0.0
-            payment = self.credit.monthly_mortgage_payment(effective, ltv)
-            if current_due + payment > self.credit.dti_limit * agent.income / 12.0:
-                return False
-        return True
-
-    def _get_rental_candidates(self, agent):
-        """
-        Listed vacant rentals the agent can afford to bid on.
-        """
+    def _rental_candidates(self, agent):
         listed = [
-            p
-            for p in self.properties
+            p for p in self.properties
             if p.listed_for_rent and p.occupant_id is None and p.owner_id != agent.unique_id
         ]
         if agent.home_property is None:
-            return listed
+            return listed  # unhoused search the whole market
         zones = self.get_household_search_zones(agent.home_zone)
         return [p for p in listed if p.zone in zones]
 
-    def _apply_ownership_transactions(self, transactions):
-        # Pre-compute net sale proceeds per agent (buyers who also sell will have
-        # their cash changed by pass 1 before we check affordability in pass 2).
-        sale_proceeds = {}
-        for txn in transactions:
-            seller = self._agent_map.get(txn.seller_id)
-            if seller is None:
+    # ----------------------------------------------------------------- distress
+    def _plan_distress_sales(self, market_rent):
+        """List the FEWEST properties needed to cover each agent's cash shortfall."""
+        plans = {}
+        for agent in self.agents:
+            due = agent.mortgage_payment_due() if hasattr(agent, "mortgage_payment_due") else 0.0
+            shortfall = due - agent.cash
+            if shortfall <= 0:
                 continue
-            prop = self._property_map[txn.property_id]
-            if hasattr(seller, "_mortgages") and prop.id in seller._mortgages:
-                orig_price, m_ltv, steps_held = seller._mortgages[prop.id]
-                outstanding = self.credit.outstanding_principal(orig_price, m_ltv, steps_held)
-            else:
-                outstanding = 0.0
-            net = txn.price - outstanding
-            sale_proceeds[txn.seller_id] = sale_proceeds.get(txn.seller_id, 0.0) + net
+            selected, recovered = set(), 0.0
+            for hold_val, prop in agent.distress_sale_candidates(market_rent):
+                if recovered >= shortfall:
+                    break
+                selected.add(prop.id)
+                # rough recovery estimate: equity at current value
+                if prop.id in agent._mortgages:
+                    orig, ltv, held, rate = agent._mortgages[prop.id]
+                    out = self.credit.outstanding_principal(orig, ltv, held, rate)
+                else:
+                    out = 0.0
+                recovered += max(0.0, prop.estimated_value - out)
+            if selected:
+                plans[agent.unique_id] = selected
+        return plans
 
-        # Filter out transactions where the buyer can no longer afford the price
-        # after accounting for their own concurrent sales (negative equity
-        # reduces cash before the buyer deposit is due in pass 2).
+    # --------------------------------------------------------------- listing
+    def _list_for_sale(self, market, actions, distress, market_rent):
+        for prop in self.properties:
+            prop.listed_for_sale = False
+        for agent in self.agents:
+            forced = distress.get(agent.unique_id, set())
+            agent_actions = actions.get(agent.unique_id, {})
+            for pid in list(agent.owned_properties):
+                prop = self._property_map[pid]
+                if pid in forced or agent_actions.get(pid) == "sell":
+                    reservation = 0.0 if pid in forced else agent.reservation_price(prop, market_rent)
+                    market.list_property(pid, agent.unique_id, reservation)
+                    prop.listed_for_sale = True
+
+    def _list_for_rent(self, actions):
+        # auto-listed vacant rentals stay listed; 'let' action lists an investment unit
+        for agent in self.agents:
+            agent_actions = actions.get(agent.unique_id, {})
+            for pid in list(agent.owned_properties):
+                prop = self._property_map[pid]
+                if agent_actions.get(pid) == "let" and prop.occupant_id is None:
+                    prop.listed_for_rent = True
+
+    def _submit_purchase_bids(self, market, actions, market_rent):
+        for agent in self.agents:
+            action = actions.get(agent.unique_id, {}).get("__agent__")
+            if action not in ("buy", "buy-to-let", "acquire"):
+                continue
+            purpose = action
+            cands = self._purchase_candidates(agent, listed_only=True)
+            feasible = [p for p in cands if self._purchase_feasible(agent, p, purpose)]
+            if not feasible:
+                continue
+            chosen = agent.choose_property(feasible, purpose, market_rent)
+            if chosen is None:
+                continue
+            bid = agent.compute_bid(chosen, purpose, market_rent)
+            ceiling = self.credit.max_price(purpose, agent.cash, getattr(agent, "income", 0.0))
+            bid = min(bid, ceiling)
+            if bid <= 0:
+                continue
+            btype = "household" if isinstance(agent, HouseholdAgent) else "institution"
+            market.submit_bid(chosen.id, agent.unique_id, bid, btype, purpose)
+
+    def _purchase_feasible(self, agent, prop, purpose):
+        ceiling = self.credit.max_price(purpose, agent.cash, getattr(agent, "income", 0.0))
+        if ceiling <= 0:
+            return False
+        ltv = self.credit.origination_ltv(purpose)
+        deposit = prop.estimated_value * (1.0 - ltv)
+        return agent.cash >= deposit and prop.estimated_value <= ceiling
+
+    # --------------------------------------------------------------- rental run
+    def _run_rental_market(self, renters, step, market_rent):
+        rental = RentalMarket(step=step)
+        for prop in self.properties:
+            if prop.listed_for_rent and prop.occupant_id is None:
+                rental.list_property(prop.id, prop.owner_id)
+        for hh in renters:
+            for c in self._rental_candidates(hh):
+                bid = hh.compute_rent_bid(c)
+                if bid > 0:
+                    rental.submit_bid(c.id, hh.unique_id, bid)
+        self._apply_rental_transactions(rental.resolve())
+
+    # ------------------------------------------------------------- apply txns
+    def _apply_ownership_transactions(self, transactions):
         valid = []
         for txn in transactions:
             buyer = self._agent_map.get(txn.buyer_id)
-            if buyer is None:
+            seller = self._agent_map.get(txn.seller_id)
+            if buyer is None or seller is None:
                 continue
-            ltv = txn.origination_ltv if txn.origination_ltv is not None else self.credit.ltv_limit
-            buyer_net = sale_proceeds.get(txn.buyer_id, 0.0)
-            current_due = buyer.mortgage_payment_due() if hasattr(buyer, "mortgage_payment_due") else 0.0
-            available = max(0.0, buyer.cash + buyer_net - current_due)
-            if isinstance(buyer, HouseholdAgent):
-                ceiling = self.credit.household_max_price(available, buyer.income, ltv=ltv)
-            else:
-                ceiling = self.credit.institution_max_price(available)
-            if txn.price <= ceiling:
-                valid.append(txn)
+            ltv = self.credit.origination_ltv(txn.purpose)
+            deposit = txn.price * (1.0 - ltv)
+            if buyer.cash < deposit - 1e-9:  # tight deposit-feasibility guard
+                continue
+            valid.append(txn)
 
-        # Pass 1: property state changes + sellers get paid (sale proceeds credited)
         for txn in valid:
             prop = self._property_map[txn.property_id]
-            seller = self._agent_map.get(txn.seller_id)
-            buyer = self._agent_map.get(txn.buyer_id)
-
-            prev_occupant_id = prop.occupant_id
-            if prev_occupant_id is not None and prev_occupant_id != txn.seller_id:  # evict tenant
-                prev_occupant = self._agent_map.get(prev_occupant_id)
-                if isinstance(prev_occupant, HouseholdAgent):
-                    prev_occupant.vacate_rental()
-                prop.occupant_id = None
-            elif prop.occupant_id == txn.seller_id:  # move out as owner-occupier
-                prop.occupant_id = None
-                if isinstance(seller, HouseholdAgent):
-                    seller.home_property = None
-
+            seller = self._agent_map[txn.seller_id]
+            buyer = self._agent_map[txn.buyer_id]
+            # evict / move out of the sold unit
+            if prop.occupant_id is not None and prop.occupant_id != txn.seller_id:
+                occ = self._agent_map.get(prop.occupant_id)
+                if isinstance(occ, HouseholdAgent):
+                    occ.vacate_rental()
+            prop.occupant_id = None
             seller.release_property(prop, txn.price)
             prop.owner_id = txn.buyer_id
             prop.purchase_anchor_price = txn.price
-
             prop.listed_for_sale = False
             prop.listed_for_rent = False
             prop.current_rent = None
-
-        # Pass 2: buyers pay deposits (sale proceeds already credited in pass 1)
-        for txn in valid:
-            buyer = self._agent_map.get(txn.buyer_id)
-            prop = self._property_map[txn.property_id]
-            buyer.acquire_property(prop, txn.price, origination_ltv=txn.origination_ltv)
+            buyer.acquire_property(prop, txn.price, txn.purpose)
 
         self.this_step_transactions = valid
         self.all_transactions.extend(valid)
 
     def _apply_rental_transactions(self, transactions):
         applied = []
-        self._rental_apply_counts = {
-            "awarded": len(transactions),
-            "stale_landlord": 0,
-            "owner_occupied": 0,
-            "rent_unaffordable": 0,
-            "insufficient_cash": 0,
-        }
         for txn in transactions:
             prop = self._property_map[txn.property_id]
             if not prop.listed_for_rent:
                 continue
             tenant = self._agent_map.get(txn.tenant_id)
             landlord = self._agent_map.get(txn.landlord_id)
-
-            # Evict previous occupant if any
-            if prop.occupant_id is not None and prop.occupant_id != txn.tenant_id:
-                prev = self._agent_map.get(prop.occupant_id)
-                if isinstance(prev, HouseholdAgent):
-                    prev.vacate_rental()
-
+            if tenant is None:
+                continue
+            # vacate the tenant's old rented home (if any)
+            old = tenant.home_property
+            if old is not None and old != prop.id and old not in tenant.owned_properties:
+                op = self._property_map.get(old)
+                if op is not None and op.occupant_id == tenant.unique_id:
+                    op.occupant_id = None
+                    op.listed_for_rent = True
             prop.occupant_id = txn.tenant_id
-            prop.tenancy_months = 0
             prop.tenancy_months = 0
             prop.listed_for_rent = False
             prop.current_rent = txn.monthly_rent
-
-            old_home = tenant.home_property
-            if old_home is not None and old_home != prop.id:
-                old_prop = self._property_map.get(old_home)
-                if old_prop is not None and old_prop.occupant_id == tenant.unique_id:
-                    old_prop.occupant_id = None
-                    old_prop.tenancy_quarters = 0
-                    if old_home not in tenant.owned_properties:
-                        old_prop.listed_for_rent = True
             tenant.move_into_rental(prop)
-
             tenant.pay_rent(txn.monthly_rent)
-            landlord.receive_rent(txn.monthly_rent)
-
+            if landlord is not None:
+                landlord.receive_rent(txn.monthly_rent)
             applied.append(txn)
-
         self.this_step_rental_transactions = applied
         self.all_rental_transactions.extend(applied)
 
+    # ------------------------------------------------------------- record state
+    def _record_state(self):
+        # Price index: median estimated value of the whole stock. This is a stable,
+        # representative index (mark-to-market already smooths it toward transaction
+        # prices) and avoids the spurious volatility of a few-transaction mean, which
+        # otherwise inflated the growth-rate volatility and crushed risk-adjusted WTP.
+        self._price_history.append(float(np.median([p.estimated_value for p in self.properties])))
+        rents = [p.current_rent for p in self.properties
+                 if p.current_rent and p.occupant_id is not None and p.occupant_id != p.owner_id]
+        if rents:
+            self._rent_history.append(float(np.mean(rents)))
+
+        # per-zone price index (median estimated value in the zone) for the
+        # bounded-vision household signal; stable like the global index.
+        zh = getattr(self, "_zone_price_history", None)
+        if zh is None:
+            zh = {z: [] for z in range(self.n_zones)}
+            self._zone_price_history = zh
+        zone_vals: dict[int, list] = {}
+        for p in self.properties:
+            zone_vals.setdefault(p.zone, []).append(p.estimated_value)
+        for z in range(self.n_zones):
+            if zone_vals.get(z):
+                zh[z].append(float(np.median(zone_vals[z])))
+
+        insts = [a for a in self.agents if isinstance(a, InstitutionalAgent)]
+        inst_units = sum(len(i.portfolio) for i in insts)
+        ltvs = [m[1] for a in self.agents for m in a._mortgages.values()]
+        self._state_history.append({
+            "step": self.steps,
+            "price": self._price_history[-1] if self._price_history else 0.0,
+            "rent": self._rent_history[-1] if self._rent_history else 0.0,
+            "volume": len(self.this_step_transactions),
+            "macro": self.current_macro_state,
+            "avg_ltv": float(np.mean(ltvs)) if ltvs else 0.0,
+            "inst_share": inst_units / max(len(self.properties), 1),
+        })
+
+    # ------------------------------------------------------------- visual grid
+    def _sync_visual_grid(self):
+        for cell in self.grid.all_cells:
+            for agent in list(cell.agents):
+                try:
+                    cell.remove_agent(agent)
+                except Exception:
+                    pass
+        cells = sorted(self.grid.all_cells, key=lambda c: c.coordinate)
+        by_coord = {c.coordinate: c for c in cells}
+        for prop, cell in zip(self.properties, cells):
+            prop.grid_coord = cell.coordinate
+        for agent in self.agents:
+            if isinstance(agent, HouseholdAgent) and agent.home_property is not None:
+                prop = self._property_map.get(agent.home_property)
+                if prop is None:
+                    continue
+                cell = by_coord.get(prop.grid_coord)
+                if cell is not None and len(cell.agents) == 0:
+                    cell.add_agent(agent)
+
     def get_model_state(self):
         households = [a for a in self.agents if isinstance(a, HouseholdAgent)]
-        institutions = [a for a in self.agents if isinstance(a, InstitutionalAgent)]
-        owners = sum(1 for h in households if h.owned_properties)
-        owner_occ = sum(1 for h in households if h.is_owner_occupier)
-        renters = sum(1 for h in households if h.is_renter)
-        landlords = sum(1 for h in households if h.is_landlord)
-        renter_landlords = sum(1 for h in households if h.is_renter and h.is_landlord)
         return {
             "step": self.steps,
-            "hh_ownership_rate": owners / max(len(households), 1),
-            "owner_occupier_count": owner_occ,
-            "renter_count": renters,
-            "landlord_count": landlords,
-            "renter_landlord_count": renter_landlords,
-            "inst_property_count": sum(len(i.portfolio) for i in institutions),
-            "sale_txns": len(self.this_step_transactions),
-            "rental_txns": len(self.this_step_rental_transactions),
+            "hh_ownership_rate": sum(1 for h in households if h.owned_properties) / max(len(households), 1),
+            "renters": sum(1 for h in households if h.is_renter and h.home_property is not None),
+            "landlords": sum(1 for h in households if h.is_landlord),
         }
+
+
+__all__ = ["HousingModel"]

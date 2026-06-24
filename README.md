@@ -18,3 +18,17 @@ uv run run.py
 ```bash
 uv run python -m sensitivity
 ```
+
+## Designed credit-shock experiments
+
+The baseline holds credit conditions fixed. Designed experiments apply a scheduled
+credit shock through the policy layer:
+
+```bash
+uv run run.py --experiment rate-up         # mortgage/funding rate increase
+uv run run.py --experiment rate-down
+uv run run.py --experiment ltv-tighten      # lower LTV caps
+uv run run.py --experiment ltv-loosen
+uv run run.py --experiment tightening       # combined rate up + LTV/DTI tighten
+uv run run.py --experiment rate-up --shock-step 120
+```

@@ -118,7 +118,7 @@ class TestOwnershipMarket(unittest.TestCase):
         market.list_property(property_id=1, owner_id=10, reservation=0)
         market.submit_bid(
             property_id=1, bidder_id=20, amount=100_000,
-            bidder_type="household", origination_ltv=0.8,
+            bidder_type="household", purpose="buy",
         )
         txns = market.resolve()
         self.assertEqual(len(txns), 1)
@@ -131,13 +131,13 @@ class TestOwnershipMarket(unittest.TestCase):
         self.assertEqual(txn.price, 100_000)
         self.assertEqual(txn.winning_bid, 100_000)
         self.assertEqual(txn.buyer_type, "household")
-        self.assertEqual(txn.origination_ltv, 0.8)
+        self.assertEqual(txn.purpose, "buy")
 
 
 class TestRentalMarket(unittest.TestCase):
     def test_returns_rental_transaction_record(self):
         market = RentalMarket(step=3)
-        market.list_property(property_id=1, owner_id=10, reservation=0)
+        market.list_property(property_id=1, owner_id=10)
         market.submit_bid(property_id=1, bidder_id=20, amount=1_500)
         txns = market.resolve()
         self.assertEqual(len(txns), 1)
@@ -151,8 +151,8 @@ class TestRentalMarket(unittest.TestCase):
 
     def test_tenant_dedup_keeps_highest_rent_bid(self):
         market = RentalMarket(step=1)
-        market.list_property(property_id=1, owner_id=10, reservation=0)
-        market.list_property(property_id=2, owner_id=11, reservation=0)
+        market.list_property(property_id=1, owner_id=10)
+        market.list_property(property_id=2, owner_id=11)
         market.submit_bid(property_id=1, bidder_id=20, amount=2_000)
         market.submit_bid(property_id=2, bidder_id=20, amount=1_500)
         txns = market.resolve()
@@ -163,8 +163,8 @@ class TestRentalMarket(unittest.TestCase):
 
     def test_tenant_dedup_reversed_order(self):
         market = RentalMarket(step=1)
-        market.list_property(property_id=1, owner_id=10, reservation=0)
-        market.list_property(property_id=2, owner_id=11, reservation=0)
+        market.list_property(property_id=1, owner_id=10)
+        market.list_property(property_id=2, owner_id=11)
         market.submit_bid(property_id=1, bidder_id=20, amount=1_000)
         market.submit_bid(property_id=2, bidder_id=20, amount=2_000)
         txns = market.resolve()
@@ -174,8 +174,8 @@ class TestRentalMarket(unittest.TestCase):
 
     def test_different_tenants_both_win(self):
         market = RentalMarket(step=1)
-        market.list_property(property_id=1, owner_id=10, reservation=0)
-        market.list_property(property_id=2, owner_id=11, reservation=0)
+        market.list_property(property_id=1, owner_id=10)
+        market.list_property(property_id=2, owner_id=11)
         market.submit_bid(property_id=1, bidder_id=20, amount=2_000)
         market.submit_bid(property_id=2, bidder_id=21, amount=1_500)
         txns = market.resolve()
@@ -183,9 +183,9 @@ class TestRentalMarket(unittest.TestCase):
 
     def test_tenant_dedup_respects_sort_order(self):
         market = RentalMarket(step=1)
-        market.list_property(property_id=1, owner_id=10, reservation=0)
-        market.list_property(property_id=2, owner_id=11, reservation=0)
-        market.list_property(property_id=3, owner_id=12, reservation=0)
+        market.list_property(property_id=1, owner_id=10)
+        market.list_property(property_id=2, owner_id=11)
+        market.list_property(property_id=3, owner_id=12)
         market.submit_bid(property_id=1, bidder_id=20, amount=1_000)
         market.submit_bid(property_id=2, bidder_id=20, amount=3_000)
         market.submit_bid(property_id=3, bidder_id=21, amount=2_000)

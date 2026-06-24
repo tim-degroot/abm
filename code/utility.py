@@ -1,171 +1,17 @@
+"""Utility: turn expected payoffs into action values and logit choices.
+
+Design (per the report):
+  * Linear utility in a *risk-adjusted* payoff. Risk aversion is NOT CRRA
+    curvature; it is a loading on expected growth, g -> g - gamma * sigma. The
+    risk adjustment is applied in valuation via the adjusted growth rate, so the
+    action values here are linear in money.
+  * A single logit choice function is used everywhere (no duplicate logits).
 """
-Utility: converts P&L into logit inputs.
-"""
+
+from __future__ import annotations
 
 import numpy as np
-import math
 from typing import Hashable, Mapping
-from dataclasses import dataclass
-
-def _pnl_owner_occupier(
-    expected_capital_gain: float,
-    mortgage_rate: float,
-    ltv: float,
-    price: float,
-) -> float:
-    """Monthly P&L for an owner-occupier.
-    Gain from expected price growth minus monthly mortgage cost.
-    """
-    return expected_capital_gain - mortgage_rate * ltv * price
-
-
-def _pnl_landlord(
-    net_rent: float,
-    expected_capital_gain: float,
-    btl_rate: float,
-    ltv: float,
-    price: float,
-) -> float:
-    """Monthly P&L for a private landlord.
-    Rental income plus expected price growth minus mortgage cost.
-    """
-    return net_rent + expected_capital_gain - btl_rate * ltv * price
-
-
-def _pnl_institution(
-    net_rent: float,
-    expected_capital_gain: float,
-    funding_rate: float,
-    ltv: float,
-    price: float,
-) -> float:
-    """Monthly P&L for an institutional investor.
-    Same structure as landlord but cheaper funding rate.
-    """
-    return net_rent + expected_capital_gain - funding_rate * ltv * price
-
-
-def value_owner_occupier(
-    quality_value: float,
-    expected_capital_gain: float,
-    mortgage_rate: float,
-    ltv: float,
-    price: float,
-) -> float:
-    """Value of owning and living in a property.
-    Quality adds direct consumption value on top of P&L.
-    """
-    return quality_value + _pnl_owner_occupier(expected_capital_gain, mortgage_rate, ltv, price)
-
-
-def value_landlord(
-    net_rent: float,
-    expected_capital_gain: float,
-    btl_rate: float,
-    ltv: float,
-    price: float,
-) -> float:
-    """Value of owning and renting out a property.
-    Quality does not enter directly — only through the rent R.
-    """
-    return _pnl_landlord(net_rent, expected_capital_gain, btl_rate, ltv, price)
-
-
-def value_institution(
-    net_rent: float,
-    expected_capital_gain: float,
-    funding_rate: float,
-    ltv: float,
-    price: float,
-) -> float:
-    """Value of a property for an institutional investor.
-    Risk-neutral: value equals expected P&L, no curvature applied.
-    """
-    return _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
-
-# Institutions use risk-free return as the outside option for every action.
-# Households use their best feasible rental as the outside option.
-
-def delta_v_acquire(
-    net_rent: float,
-    expected_capital_gain: float,
-    funding_rate: float,
-    ltv: float,
-    price: float,
-    risk_free_rate: float,
-) -> float:
-    """Surplus from buying a property over investing the same cash at the risk-free rate."""
-    pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
-    equity = (1.0 - ltv) * price
-    return pnl - risk_free_rate * equity
-
-
-def delta_v_hold(
-    net_rent: float,
-    expected_capital_gain: float,
-    funding_rate: float,
-    ltv: float,
-    price: float,
-    market_value: float,
-    risk_free_rate: float,
-) -> float:
-    """Surplus from continuing to own a property over liquidating it at market value."""
-    pnl = _pnl_institution(net_rent, expected_capital_gain, funding_rate, ltv, price)
-    proceeds = market_value - ltv * price
-    if proceeds < 0.0:
-        return pnl
-    return pnl - risk_free_rate * proceeds
-
-
-def delta_v_sell_institution(
-    net_rent: float,
-    expected_capital_gain: float,
-    funding_rate: float,
-    ltv: float,
-    price: float,
-    market_value: float,
-    risk_free_rate: float,
-) -> float:
-    """Surplus from selling. Symmetric opposite of hold: sell is preferred when
-    the property earns less than the risk-free rate.
-    """
-    return -delta_v_hold(net_rent, expected_capital_gain, funding_rate, ltv, price, market_value, risk_free_rate)
-
-
-def crra(delta_v: float, gamma: float) -> float:
-    """Applies risk aversion to a surplus value.
-    """
-    return crra_utility(delta_v, gamma)
-
-
-def crra_utility(surplus: float, gamma: float) -> float:
-    """CRRA utility of a surplus.
-    Returns -inf for non-positive surplus (infeasible action).
-    """
-    if surplus <= 0.0:
-        return -np.inf
-    if gamma == 0.0:
-        return surplus
-    if abs(gamma - 1.0) < 1e-12:
-        return float(np.log(surplus))
-    return float(surplus ** (1.0 - gamma)) / (1.0 - gamma)
-
-
-def household_action_value(
-    property_value: float,
-    outside_option_value: float,
-    gamma: float,
-) -> float:
-    """Utility of an action for a household.
-    """
-    surplus = property_value - outside_option_value
-    return crra_utility(surplus, gamma)
-
-
-def institutional_action_value(expected_profit: float) -> float:
-    """Utility of an action for an institution.
-    """
-    return expected_profit
 
 
 def risk_adjusted_growth(
@@ -173,52 +19,59 @@ def risk_adjusted_growth(
     expected_volatility: float,
     risk_loading: float,
 ) -> float:
-    """Reduced form household risk
+    """Reduced-form risk adjustment: g_adj = g - gamma * sigma.
+
+    risk_loading (gamma) and expected_volatility (sigma) must be non-negative.
+    A risk-neutral agent (gamma = 0) gets back the raw growth.
     """
-    values = {
-        "expected_growth": expected_growth,
-        "expected_volatility": expected_volatility,
-        "risk_loading": risk_loading,
-    }
-
-    for name, value in values.items():
-        if not math.isfinite(value):
-            raise ValueError(f"{name} must be finite")
-
     if expected_volatility < 0.0:
         raise ValueError("expected_volatility must be non-negative")
-
     if risk_loading < 0.0:
         raise ValueError("risk_loading must be non-negative")
-
     return expected_growth - risk_loading * expected_volatility
 
-@dataclass
-class DecisionContext:
-    """Context passed to property_value for property-level evaluation."""
-    purchase_candidates: list
-    rental_candidates: tuple = ()
 
+def logit_choice(
+    values: Mapping[Hashable, float],
+    rng,
+    beta: float = 1.0,
+) -> Hashable:
+    """Pick one option with probability proportional to exp(beta * value).
 
-def property_value(agent, prop, ctx: DecisionContext) -> float:
-    """Evaluate a property for an agent. Delegates to the agent's WTP method."""
-    return agent._wtp_for_property(prop)
-
-
-def logit_choice(values: Mapping[Hashable, float], rng, beta: float = 1.0) -> Hashable:
-    """Picks one option probabilistically. Higher value = more likely to be chosen.
-    Pr(k) = exp(β·V_k) / Σ exp(β·V_k'). Infeasible options get V = −inf → zero probability.
+    Infeasible options carry value -inf and receive zero probability. If every
+    option is infeasible, the lowest-impact option is returned if present
+    ('hold'/'none'/'stay'), otherwise a uniform pick is made.
     """
     labels = list(values.keys())
     vals = np.array(list(values.values()), dtype=float)
 
-    finite_mask = np.isfinite(vals)
-    if not np.any(finite_mask):
-        probs = np.zeros(len(vals))
-    else:
-        shifted = np.where(finite_mask, vals * beta - vals[finite_mask].max() * beta, -np.inf)
-        exp_v = np.where(finite_mask, np.exp(np.clip(shifted, -500, 0)), 0.0)
-        total = exp_v.sum()
-        probs = exp_v / total if total > 0 else np.zeros(len(vals))
+    finite = np.isfinite(vals)
+    if not np.any(finite):
+        for fallback in ("hold", "none", "stay", "do_nothing"):
+            if fallback in values:
+                return fallback
+        return rng.choice(labels)
 
-    return rng.choice(list(labels), p=list(probs))
+    shifted = np.where(finite, beta * (vals - vals[finite].max()), -np.inf)
+    exp_v = np.where(finite, np.exp(np.clip(shifted, -500, 0)), 0.0)
+    total = exp_v.sum()
+    probs = exp_v / total if total > 0 else finite / finite.sum()
+    return rng.choice(labels, p=probs)
+
+
+def logit_probabilities(values: Mapping[Hashable, float], beta: float = 1.0):
+    """Return {label: probability} for diagnostics / property selection weighting."""
+    labels = list(values.keys())
+    vals = np.array(list(values.values()), dtype=float)
+    finite = np.isfinite(vals)
+    if not np.any(finite):
+        u = 1.0 / len(labels)
+        return {k: u for k in labels}
+    shifted = np.where(finite, beta * (vals - vals[finite].max()), -np.inf)
+    exp_v = np.where(finite, np.exp(np.clip(shifted, -500, 0)), 0.0)
+    total = exp_v.sum()
+    probs = exp_v / total if total > 0 else finite / finite.sum()
+    return {k: float(p) for k, p in zip(labels, probs)}
+
+
+__all__ = ["risk_adjusted_growth", "logit_choice", "logit_probabilities"]
