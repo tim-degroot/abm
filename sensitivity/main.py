@@ -247,10 +247,19 @@ def _read_seed_files(out_dir):
 
 def _compute_sobol_indices(problem, response_name, Y, sa_cfg):
     """Run SALib Sobol analysis on one response vector."""
-    nan_count = np.isnan(Y).sum()
+    Y = np.asarray(Y, dtype=float)
+    nan_count = int(np.isnan(Y).sum())
     if nan_count > 0:
         print(f"  {response_name}: {nan_count}/{len(Y)} NaN — filling with 0")
         Y = np.nan_to_num(Y, nan=0.0)
+
+    # SALib's bootstrap crashes on near-constant output (e.g. when most
+    # runs failed and were filled with 0).  Skip instead of propagating
+    # the error — the user will see a gap in the results table.
+    if np.nanvar(Y) < 1e-12 or np.allclose(Y, Y[0]):
+        print(f"  {response_name}: near-constant output — skipping analysis")
+        return []
+
     try:
         Si = sobol_analyze.analyze(problem, Y, print_to_console=False)
         rows = []
@@ -283,6 +292,11 @@ def plot_sobol(sobol_df, sa_cfg, out_dir):
 
     for ax, resp in zip(axes, responses):
         sub = sobol_df[sobol_df["response"] == resp]
+        if sub.empty:
+            ax.text(0.5, 0.5, "N/A", ha="center", va="center", transform=ax.transAxes)
+            ax.set_title(resp)
+            continue
+
         s1 = sub["S1"].values
         s1_c = sub["S1_conf"].values
         st = sub["ST"].values
@@ -314,7 +328,7 @@ def cmd_aggregate(args):
     response_names = [r["name"] for r in sa_cfg["responses"]]
 
     # Average responses per sample_id across seeds
-    avg_responses = combined.groupby("sample_id")[response_names].mean()
+    avg_responses = combined.groupby("sample_id")[response_names].mean(skipna=True)
     param_cols = combined.groupby("sample_id")[param_names].first()
 
     avg_df = pd.concat([param_cols, avg_responses], axis=1)
