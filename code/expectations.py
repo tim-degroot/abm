@@ -1,4 +1,5 @@
-"""Expectation formation: adaptive belief updating and price forecasting.
+"""
+Expectation formation: adaptive belief updating and forecasting.
 
 This module is the single source of truth for how signals are turned into
 expectations. The model computes the raw signals once per step (locally per zone
@@ -27,12 +28,6 @@ def adaptive_update(current: float, signal: float, delta: float) -> float:
 
 def growth_signal(history: list[float], window: int) -> float:
     """Median period-over-period growth rate over the last `window` observations.
-
-    `history` is a list of level observations (prices or rents). Returns 0.0 when
-    there is not enough data. Uses the median to be robust to outliers/None gaps.
-    Note: None entries are treated as missing *observations* (skipped) but the
-    growth is computed only between consecutive present values, so sparse series
-    do not spuriously inflate growth.
     """
     clean = [x for x in history if x is not None and x > 0]
     if len(clean) < 2:
@@ -50,8 +45,6 @@ def growth_signal(history: list[float], window: int) -> float:
 
 def volatility_signal(history: list[float], window: int) -> float:
     """Std of period-over-period growth over the last `window` observations.
-
-    Returns 0.0 when there is not enough data to estimate a spread.
     """
     clean = [x for x in history if x is not None and x > 0]
     if len(clean) < 3:
@@ -116,9 +109,6 @@ def _fallback_price_change(state_history: list[dict]) -> float:
 
 def institutional_price_forecast(state_history: list[dict], window: int) -> float:
     """Predicted next-period price *change* (in money) via rolling-window OLS.
-
-    Falls back to the median recent change when there is too little data or the
-    regression is ill-conditioned.
     """
     if len(state_history) < window + 1:
         return _fallback_price_change(state_history)
@@ -150,9 +140,6 @@ def institutional_price_forecast(state_history: list[dict], window: int) -> floa
 
 def institutional_rent_growth_signal(state_history: list[dict], window: int) -> float:
     """EWMA-style robust rent-growth estimate from the global rent series.
-
-    Replaces the old one-period point estimate with a windowed median growth,
-    consistent with the price-forecast treatment.
     """
     rents = [s.get("rent") for s in state_history]
     return growth_signal(rents, window)

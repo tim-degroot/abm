@@ -1,9 +1,5 @@
-"""Designed credit-shock experiments, applied through the policy layer.
-
-There is no stochastic macro transition; the macro regime is fixed per run and
-credit changes are deterministic, scheduled shocks. Each policy rewrites the
-model's CreditEnvironment at a scheduled step, touching all the affected levers
-consistently. This is what the report's "mirror experiments" use.
+"""
+Designed credit-shock experiments, applied through the policy layer.
 
 Usage:
     model = HousingModel(config=cfg, policy=RateShock(step=240, delta=0.003))

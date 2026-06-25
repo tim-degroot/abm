@@ -1,27 +1,11 @@
-"""Agent definitions: households and institutional investors.
-
-Roles ("owner-occupier", "renter", "landlord") are *derived* from a household's
-ownership and occupancy state, not stored as a type. The objective function is
-identical across roles; only the feasible action set changes.
-
-Decision architecture (single, shared pattern):
-  Stage 1  choose_action  - logit over the expected value of each feasible action
-                            in a role-conditional set that always includes a
-                            no-transaction option.
-  Stage 2  choose_property - logit over the WTP of feasible candidate properties.
-  Stage 3  compute_bid     - submit truthful WTP (Vickrey => weakly dominant).
-
-Expectations (price/rent growth and their volatility) are computed once per step
-by the model and pushed onto agents via `set_expectations`; agents never update
-them in-place, so there is a single source of truth.
+"""
+Agent definitions: households and institutional investors.
 """
 
 from __future__ import annotations
 
 import mesa
-
 import valuation as val
-import utility
 from utility import risk_adjusted_growth, logit_choice, logit_probabilities
 
 
@@ -30,11 +14,8 @@ from utility import risk_adjusted_growth, logit_choice, logit_probabilities
 # ---------------------------------------------------------------------------
 
 class _BalanceSheetMixin:
-    """Mortgage book and net-worth accounting shared by both agent classes.
-
-    `_mortgages` maps property_id -> (origination_price, ltv, months_held, rate).
-    Storing the rate makes outstanding-balance and payment computations
-    rate-correct per loan (household vs. BTL vs. institutional).
+    """
+    Mortgage book and net-worth accounting shared by both agent classes.
     """
 
     def _init_balance_sheet(self):
@@ -86,7 +67,7 @@ class _BalanceSheetMixin:
 # ---------------------------------------------------------------------------
 
 class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
-    """A household. Owner-occupier / renter / landlord roles are derived from state."""
+    """A household - owner-occupier / renter / landlord roles are derived from state."""
 
     def __init__(self, unique_id, model, income, cash, risk_aversion, home_zone):
         super().__init__(model)
@@ -148,6 +129,11 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             self.expected_price_growth, self.expected_price_vol, self.risk_aversion
         )
 
+    def _risk_adjusted_rent_growth(self) -> float:
+        return risk_adjusted_growth(
+            self.expected_rent_growth, self.expected_rent_vol, self.risk_aversion
+        )
+
     # -- valuation --------------------------------------------------------------
 
     def buy_wtp(self, prop) -> float:
@@ -164,6 +150,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             self._risk_adjusted_price_growth(),
             prop.estimated_value,
             ceiling,
+            cfg.valuation.horizon
         )
 
     def btl_wtp(self, prop, market_rent) -> float:
@@ -177,9 +164,11 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             cfg.valuation.quality_sensitivity,
             market_rent,
             credit.btl_funding_rate,
+            self._risk_adjusted_rent_growth(),
             self._risk_adjusted_price_growth(),
             prop.estimated_value,
             ceiling,
+            cfg.valuation.horizon
         )
 
     def rent_wtp(self, prop) -> float:
@@ -193,11 +182,8 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
         )
 
     def hold_value(self, prop, market_rent) -> float:
-        """Uncapped value of continuing to OWN `prop` (the seller's outside option).
-
-        For a home the household occupies, this is the uncapped owner-occupier
-        WTP (what they value their own asset at). For a let property, it is the
-        uncapped buy-to-let valuation.
+        """
+        Uncapped value of continuing to own prop (seller's outside option).
         """
         cfg = self.model.config
         credit = self.model.credit
@@ -205,23 +191,21 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             return val.household_buy_wtp(
                 prop.quality, cfg.valuation.quality_value_scale,
                 cfg.valuation.base_housing_value, credit.mortgage_rate,
-                self._risk_adjusted_price_growth(), prop.estimated_value, float("inf"),
+                self._risk_adjusted_price_growth(), prop.estimated_value, float("inf"), cfg.valuation.horizon
             )
         return val.household_btl_wtp(
             prop.quality, cfg.valuation.quality_sensitivity, market_rent,
-            credit.btl_funding_rate, self._risk_adjusted_price_growth(),
-            prop.estimated_value, float("inf"),
+            credit.btl_funding_rate, self._risk_adjusted_rent_growth(),
+            self._risk_adjusted_price_growth(),
+            prop.estimated_value, float("inf"), cfg.valuation.horizon
         )
 
     def reservation_price(self, prop, market_rent) -> float:
         """Sale price p_res at which V_sell(p_res) == V_hold.
 
-        V_hold is the uncapped valuation of keeping the property. V_sell(p) is the
+        V_hold is the uncapped valuation of keeping the property, V_sell(p) is the
         sale price net of the loss-aversion penalty against the purchase anchor:
             V_sell(p) = p - lambda * max(p0 - p, 0).
-        Solving V_sell(p_res) = V_hold:
-            if V_hold <= p0:  p_res = V_hold           (no loss region)
-            else:             p_res = (V_hold + (lambda-1) * p0) / lambda
         """
         v_hold = self.hold_value(prop, market_rent)
         p0 = prop.purchase_anchor_price
@@ -256,7 +240,6 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
                 # allow 'let' only for non-home (already-investment) properties.
                 pass
             else:
-                # An investment property can be (re)let: value of the rent stream.
                 v_let = val.estimate_market_rent(
                     prop.quality, market_rent, self.model.config.valuation.quality_sensitivity
                 )
@@ -280,8 +263,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
         buy_ceiling = credit.household_max_price(self.cash, self.income + self.rental_income_monthly * 12, self.mortgage_payment_due())
         affordable_buy = [p for p in purchase_candidates if p.estimated_value <= buy_ceiling]
         if affordable_buy:
-            # Surplus of best buy = (consumption value capitalised) proxy: use WTP
-            # headroom over estimated price as the action value.
+            # Surplus of best buy
             best_buy = max(
                 (self.buy_wtp(p) - p.estimated_value for p in affordable_buy), default=0.0
             )
@@ -298,8 +280,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
 
         # Renting is an option for anyone not currently owner-occupying.
         if self.is_renter:
-            # Value of renting ~ best available rental consumption value minus
-            # current rent burden; keep it simple and positive so renters bid.
+            # Value of renting ~ best available rental consumption value minus current rent burden
             values["rent"] = best_rent_value * 0.5
 
         result["__agent__"] = logit_choice(values, rng)
@@ -425,7 +406,7 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
         ecfg = model.config.expectations
         self.expected_price_growth = ecfg.init_price_growth
         self.expected_rent_growth = ecfg.init_rent_growth
-        # Institutions are risk-neutral; volatility is carried but unused in WTP.
+        # Institutions are risk-neutral
         self.expected_price_vol = ecfg.init_price_vol
         self.expected_rent_vol = ecfg.init_rent_vol
 
@@ -457,9 +438,11 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
             market_rent,
             credit.inst_funding_rate,
             cfg.agent_init.inst_required_return,
+            self.expected_rent_growth,
             self.expected_price_growth,
             prop.estimated_value,
             ceiling,
+            cfg.valuation.horizon
         )
 
     def hold_value(self, prop, market_rent) -> float:
@@ -468,7 +451,7 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
         return val.institutional_wtp(
             prop.quality, cfg.valuation.quality_sensitivity, market_rent,
             credit.inst_funding_rate, cfg.agent_init.inst_required_return,
-            self.expected_price_growth, prop.estimated_value, float("inf"),
+            self.expected_price_growth, self.expected_rent_growth, prop.estimated_value, float("inf"), cfg.valuation.horizon
         )
 
     def reservation_price(self, prop, market_rent) -> float:

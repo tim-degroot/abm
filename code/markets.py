@@ -1,12 +1,5 @@
-"""Sealed-bid second-price (Vickrey) auction markets.
-
-Ownership auctions enforce a seller reservation price (the loss-aversion-adjusted
-reservation from agents.reservation_price). Rental auctions have NO reservation
-(landlords let to the highest bidder); rentals also clear sequentially so a
-tenant who wins one unit is removed from the remaining auctions in the round.
-
-Truthful bidding is weakly dominant in a second-price auction, so submitted bids
-equal valuations and the winning (marginal) bidder reveals the clearing price.
+"""
+Sealed-bid second-price (Vickrey) auction markets.
 """
 
 from __future__ import annotations

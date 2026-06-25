@@ -1,13 +1,8 @@
-"""Paired credit-shock analysis wrapper:
+"""
+Paired credit-shock analysis wrapper:
 
-Edit the configuration block near the top of this file to change experiment(s). Choose the
-policy names, number of stochastic replications, shock month, plotting
-horizon, rolling window, and number of worker processes.
-
-For same seed, run every policy listed in ``POLICIES_TO_RUN``. Matching
-the seed creates a paired comparison: baseline and policy begin from the same
-stochastic initial conditions and random sequence.
-
+Edit the configuration block to change experiment(s). Choose the policies, 
+number of stochastic replications, shock month, plotting horizon etc.
 """
 
 from concurrent.futures import ProcessPoolExecutor
@@ -34,7 +29,6 @@ WORKERS = 4
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "results" / "credit_shocks"
 
-# Add or remove names from policies. PUT EXPERIMENTS HERE. 
 POLICIES_TO_RUN = [
     "rate-up",
     # "rate-down",
@@ -55,7 +49,6 @@ SHARES = {
     "landlord_share": "private_landlord",
     "institution_share": "institution",
 }
-
 
 # Simulation
 
@@ -108,15 +101,12 @@ def run_seed(seed):
     Run one baseline and all selected policies for one seed.
     
     1. Run one no-policy baseline.
-    2. Loop over the names in ``POLICIES_TO_RUN``.
-    3. Create a fresh policy object from ``policies.EXPERIMENTS`` and run it
-       with the same seed as the baseline.
+    2. Loop over ``POLICIES_TO_RUN``.
+    3. Create a fresh policy object from ``policies.EXPERIMENTS`` and run it.
     4. Join the baseline and policy rolling series by model month.
     5. Calculate baseline-relative responses.
 
-    The baseline is created only once for this seed and is reused for every
-    selected policy. The returned DataFrame contains all selected policies for
-    this seed, restricted to the configured pre- and post-shock window.
+    The baseline is created only once for this seed and is reused for every policy.
     """
     baseline = run_model(seed, NoPolicy())
     responses = []
