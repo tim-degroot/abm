@@ -59,7 +59,7 @@ class PropertyInitConfig(BaseModel):
 
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    income_mean: float = Field(36_700.0, gt=0) # YEARLY
+    income_mean: float = Field(36_700.0, gt=0)  # YEARLY
     income_sigma: float = Field(0.5, ge=0)
     wealth_income_mult_low: float = Field(0.5, ge=0)
     wealth_income_mult_high: float = Field(25.0, ge=0)

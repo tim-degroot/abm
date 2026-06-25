@@ -438,7 +438,7 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
         return val.institutional_wtp(
             prop.quality,
             cfg.valuation.quality_sensitivity,
-            market_rent,
+            val.estimate_market_rent(prop.quality, market_rent, cfg.valuation.quality_sensitivity),
             credit.inst_funding_rate,
             cfg.agent_init.inst_required_return,
             self.expected_rent_growth,
@@ -448,13 +448,13 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
             cfg.valuation.horizon,
         )
 
-    def hold_value(self, prop, market_rent) -> float:
+    def hold_value(self, prop, rent) -> float:
         cfg = self.model.config
         credit = self.model.credit
         return val.institutional_wtp(
             prop.quality,
             cfg.valuation.quality_sensitivity,
-            market_rent,
+            rent,
             credit.inst_funding_rate,
             cfg.agent_init.inst_required_return,
             self.expected_price_growth,
@@ -465,8 +465,14 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
         )
 
     def reservation_price(self, prop, market_rent) -> float:
-        """Institutions mark to fundamentals; reservation = uncapped hold value."""
-        return self.hold_value(prop, market_rent)
+        """Institutions mark to fundamentals - reservation = uncapped hold value."""
+        if prop.current_rent is not None:
+            rent = prop.current_rent
+        else:
+            rent = val.estimate_market_rent(
+                prop.quality, market_rent, self.model.config.valuation.quality_sensitivity
+            )
+        return self.hold_value(prop, rent)
 
     # -- decisions --------------------------------------------------------------
 
@@ -479,7 +485,7 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
             prop = self.model._property_map[pid]
             v_hold = self.hold_value(prop, market_rent)
             p_res = self.reservation_price(prop, market_rent)
-            values = {"hold": 0.0, "sell": p_res - v_hold}
+            values = {"hold": v_hold, "sell": p_res}
             result[pid] = logit_choice(values, rng)
 
         ceiling = credit.institution_max_price(self.cash)
@@ -487,7 +493,15 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
         values = {"none": 0.0}
         if feasible:
             best = max(
-                (self.acquire_wtp(p, market_rent) - p.estimated_value for p in feasible),
+                (
+                    self.acquire_wtp(
+                        p,
+                        val.estimate_market_rent(
+                            p.quality, market_rent, self.model.config.valuation.quality_sensitivity
+                        ),
+                    )
+                    for p in feasible
+                ),
                 default=0.0,
             )
             values["acquire"] = best
@@ -497,7 +511,15 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
     def choose_property(self, candidates, purpose, market_rent):
         if not candidates:
             return None
-        scores = {p: self.acquire_wtp(p, market_rent) for p in candidates}
+        scores = {
+            p: self.acquire_wtp(
+                p,
+                val.estimate_market_rent(
+                    p.quality, market_rent, self.model.config.valuation.quality_sensitivity
+                ),
+            )
+            for p in candidates
+        }
         return logit_choice(scores, self.model.rng)
 
     def compute_bid(self, prop, purpose="acquire", market_rent=0.0) -> float:
