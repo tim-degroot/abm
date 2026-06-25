@@ -1,8 +1,18 @@
 """
-Paired credit-shock analysis wrapper:
+Paired credit-shock analysis wrapper.
 
-Edit the configuration block to change experiment(s). Choose the policies, 
-number of stochastic replications, shock month, plotting horizon etc.
+Runs the housing ABM under a credit-shock policy and its matched baseline across
+N_RUNS stochastic replicates, then saves one response figure per policy to
+results/credit_shocks/.
+
+Run from the repo root:
+    uv run code/policy_analysis.py
+
+or if project environment already active:
+    python code/policy_analysis.py
+
+Configure the run by editing the configuration block below: choose the policies (POLICIES_TO_RUN), number of
+stochastic replications (N_RUNS), shock month (SHOCK_STEP), plotting horizon, etc.
 """
 
 from concurrent.futures import ProcessPoolExecutor
@@ -25,7 +35,7 @@ SHOCK_STEP = 240
 PRE_SHOCK_MONTHS = 60
 POST_SHOCK_MONTHS = 120
 ROLLING_WINDOW = 12
-WORKERS = 4
+WORKERS = 16
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "results" / "credit_shocks"
 
@@ -82,9 +92,14 @@ def rolling_metrics(data):
     return result
 
 
-def run_model(seed, policy):
+def run_model(seed, policy, initial=None):
     """Run one model and retain the metrics used in the figure."""
     config = Config()
+
+    if initial is not None:
+        credit = config.credit.model_copy(update=initial)
+        config = config.model_copy(update={"credit": credit})
+
     sim = config.sim.model_copy(update={"seed": seed, "n_steps": TOTAL_STEPS})
     config = config.model_copy(update={"sim": sim})
 
@@ -97,22 +112,14 @@ def run_model(seed, policy):
 
 
 def run_seed(seed):
-    """
-    Run one baseline and all selected policies for one seed.
-    
-    1. Run one no-policy baseline.
-    2. Loop over ``POLICIES_TO_RUN``.
-    3. Create a fresh policy object from ``policies.EXPERIMENTS`` and run it.
-    4. Join the baseline and policy rolling series by model month.
-    5. Calculate baseline-relative responses.
-
-    The baseline is created only once for this seed and is reused for every policy.
-    """
-    baseline = run_model(seed, NoPolicy())
+    """Run a matched baseline and policy path for each selected policy."""
     responses = []
 
     for policy_name in POLICIES_TO_RUN:
-        shocked = run_model(seed, EXPERIMENTS[policy_name](step=SHOCK_STEP))
+        policy = EXPERIMENTS[policy_name](step=SHOCK_STEP)
+        initial = getattr(policy, "initial", None)
+        baseline = run_model(seed, NoPolicy(), initial=initial)
+        shocked = run_model(seed, policy, initial=initial)
         paired = baseline.merge(shocked, on="month", suffixes=("_base", "_shock"))
         response = pd.DataFrame(
             {
