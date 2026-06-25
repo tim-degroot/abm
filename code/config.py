@@ -24,10 +24,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SimConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    n_households: int = Field(250, gt=0)
+    n_households: int = Field(1000, gt=0)
     n_institutions: int = Field(5, gt=0)
-    n_properties: int = Field(300, gt=0)
-    n_steps: int = Field(720, gt=0)
+    n_properties: int = Field(1250, gt=0)
+    n_steps: int = Field(240, gt=0)
     seed: int = Field(42, ge=0)
 
 
@@ -51,7 +51,7 @@ class PropertyInitConfig(BaseModel):
     zone_quality_sd: float = Field(0.8, ge=0)
     property_residual_sd: float = Field(0.3, ge=0)
     init_base_price: float = Field(200_000.0, gt=0)
-    init_price_quality_sensitivity: float = Field(50_000.0, ge=0)
+    init_price_quality_sensitivity: float = Field(20_000.0, ge=0)
     init_ownership_prob: float = Field(
         0.90, ge=0, le=1
     )  # fraction of households initially allocated an owned home.
@@ -59,7 +59,7 @@ class PropertyInitConfig(BaseModel):
 
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    income_mean: float = Field(30_000.0, gt=0)
+    income_mean: float = Field(36_700.0, gt=0)
     income_sigma: float = Field(0.5, ge=0)
     wealth_income_mult_low: float = Field(0.5, ge=0)
     wealth_income_mult_high: float = Field(25.0, ge=0)
@@ -67,8 +67,8 @@ class AgentInitConfig(BaseModel):
     ltv_dist_high: float = Field(0.85, ge=0, le=1)
     risk_aversion_mu: float = Field(1.0, ge=0)
     risk_aversion_sigma: float = Field(0.5, ge=0)
-    inst_cash_low: float = Field(1_500_000.0, ge=0)
-    inst_cash_high: float = Field(10_000_000.0, ge=0)
+    inst_cash_low: float = Field(15_000_000.0, ge=0)
+    inst_cash_high: float = Field(100_000_000.0, ge=0)
     inst_required_return: float = Field(0.0015, ge=0)
     inst_min_yield: float = Field(0.04, ge=0)
     loss_aversion: float = Field(1.30, ge=0)
@@ -78,7 +78,7 @@ class CreditConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     mortgage_rate: float = Field(0.00308, ge=0)
     ltv_limit: float = Field(0.9, ge=0, le=1)
-    dti_limit: float = Field(0.33, ge=0, le=1)
+    dti_limit: float = Field(0.4, ge=0, le=1)
     loan_term_months: int = Field(300, gt=0)
     btl_funding_rate: float = Field(0.008, ge=0)
     btl_ltv: float = Field(0.50, ge=0, le=1)
