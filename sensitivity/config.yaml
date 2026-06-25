@@ -45,16 +45,6 @@ parameters:
     bounds: [0.20, 0.45]
     distribution: uniform
 
-  - name: income_mean
-    path: agent_init.income_mean
-    bounds: [30_000, 60_000]
-    distribution: uniform
-
-  - name: signal_window
-    path: expectations.signal_window
-    bounds: [6, 36]
-    distribution: int
-
   # - name: btl_ltv
   #   path: credit.btl_ltv
   #   bounds: [0.50, 0.85]
