@@ -15,12 +15,13 @@ Configure the run by editing the configuration block below: choose the policies 
 stochastic replications (N_RUNS), shock month (SHOCK_STEP), plotting horizon, etc.
 """
 
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from config import Config
 from model import HousingModel
@@ -220,7 +221,16 @@ def main():
 
     print(f"Running {N_RUNS} paired replications for: {', '.join(POLICIES_TO_RUN)}")
     with ProcessPoolExecutor(max_workers=min(WORKERS, N_RUNS)) as executor:
-        responses = pd.concat(executor.map(run_seed, seeds), ignore_index=True)
+        futures = {executor.submit(run_seed, seed): seed for seed in seeds}
+        results = []
+        for future in tqdm(
+            as_completed(futures),
+            total=len(seeds),
+            desc="Replications",
+            unit="seed",
+        ):
+            results.append(future.result())
+        responses = pd.concat(results, ignore_index=True)
 
     summary = summarise(responses)
     for policy_name in POLICIES_TO_RUN:
