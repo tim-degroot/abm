@@ -8,10 +8,10 @@ import mesa
 import valuation as val
 from utility import risk_adjusted_growth, logit_choice, logit_probabilities
 
-
 # ---------------------------------------------------------------------------
 # Mixin: shared balance-sheet mechanics
 # ---------------------------------------------------------------------------
+
 
 class _BalanceSheetMixin:
     """
@@ -66,19 +66,20 @@ class _BalanceSheetMixin:
 # HouseholdAgent
 # ---------------------------------------------------------------------------
 
+
 class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
     """A household - owner-occupier / renter / landlord roles are derived from state."""
 
     def __init__(self, unique_id, model, income, cash, risk_aversion, home_zone):
         super().__init__(model)
         self.income = income
-        self.baseline_income = income
         self.cash = cash
         self.risk_aversion = risk_aversion
         self.home_zone = home_zone
         self.owned_properties: set[int] = set()
-        self.home_property: int | None = None  # owned OR rented, or None if unhoused
-        self.rental_income_monthly: float = 0.0  # total rent received this step
+        self.home_property: int | None = None
+        self.rental_income_monthly: float = 0.0
+        self.loss_aversion = model.config.agent_init.loss_aversion
 
         ecfg = model.config.expectations
         self.expected_price_growth = ecfg.init_price_growth
@@ -150,7 +151,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             self._risk_adjusted_price_growth(),
             prop.estimated_value,
             ceiling,
-            cfg.valuation.horizon
+            cfg.valuation.horizon,
         )
 
     def btl_wtp(self, prop, market_rent) -> float:
@@ -168,7 +169,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             self._risk_adjusted_price_growth(),
             prop.estimated_value,
             ceiling,
-            cfg.valuation.horizon
+            cfg.valuation.horizon,
         )
 
     def rent_wtp(self, prop) -> float:
@@ -181,38 +182,18 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             self.model.credit.dti_limit,
         )
 
-    def hold_value(self, prop, market_rent) -> float:
+    def reservation_price(self, prop, v_hold):
         """
-        Uncapped value of continuing to own prop (seller's outside option).
-        """
-        cfg = self.model.config
-        credit = self.model.credit
-        if prop.id == self.home_property:
-            return val.household_buy_wtp(
-                prop.quality, cfg.valuation.quality_value_scale,
-                cfg.valuation.base_housing_value, credit.mortgage_rate,
-                self._risk_adjusted_price_growth(), prop.estimated_value, float("inf"), cfg.valuation.horizon
-            )
-        return val.household_btl_wtp(
-            prop.quality, cfg.valuation.quality_sensitivity, market_rent,
-            credit.btl_funding_rate, self._risk_adjusted_rent_growth(),
-            self._risk_adjusted_price_growth(),
-            prop.estimated_value, float("inf"), cfg.valuation.horizon
-        )
-
-    def reservation_price(self, prop, market_rent) -> float:
-        """Sale price p_res at which V_sell(p_res) == V_hold.
-
+        Sale price p_res at which V_sell(p_res) == V_hold.
         V_hold is the uncapped valuation of keeping the property, V_sell(p) is the
         sale price net of the loss-aversion penalty against the purchase anchor:
-            V_sell(p) = p - lambda * max(p0 - p, 0).
+        V_sell(p) = p - lambda * max(p0 - p, 0).
         """
-        v_hold = self.hold_value(prop, market_rent)
         p0 = prop.purchase_anchor_price
-        lam = self.model.config.agent_init.loss_aversion
-        if v_hold <= p0:
+        lam = self.loss_aversion
+        if v_hold >= p0:
             return v_hold
-        return (v_hold + (lam - 1.0) * p0) / lam
+        return (v_hold + lam * p0) / (1 + lam)
 
     # -- Stage 1: action choice -------------------------------------------------
 
@@ -230,60 +211,69 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
         # Per-property: for each owned property decide hold / sell / let.
         for pid in list(self.owned_properties):
             prop = self.model._property_map[pid]
-            v_hold = self.hold_value(prop, market_rent)
-            # Sale surplus over holding (net of loss aversion at the reservation).
-            p_res = self.reservation_price(prop, market_rent)
-            v_sell = p_res - v_hold  # >= 0 by construction of p_res; ~0 at indiff.
-            values = {"hold": 0.0, "sell": v_sell}
-            if pid == self.home_property:
-                # Letting one's home is only sensible if not living elsewhere; we
-                # allow 'let' only for non-home (already-investment) properties.
-                pass
-            else:
-                v_let = val.estimate_market_rent(
-                    prop.quality, market_rent, self.model.config.valuation.quality_sensitivity
-                )
-                values["let"] = v_let
-            result[pid] = logit_choice(values, rng)
 
-        # Agent-level: buy / buy-to-let / rent / none.
+            if pid == self.home_property:
+                v_hold = self.buy_wtp(prop)
+                reservation_price = self.reservation_price(prop, v_hold)
+            else:
+                if prop.current_rent is not None:
+                    rent = prop.current_rent
+                else:
+                    rent = val.estimate_market_rent(
+                        prop.quality, market_rent, self.model.config.valuation.quality_sensitivity
+                    )
+                v_hold = self.btl_wtp(prop, rent)
+                reservation_price = self.reservation_price(prop, v_hold)
+            v_sell = reservation_price - self.loss_aversion * max(
+                prop.purchase_anchor_price - reservation_price, 0
+            )
+
+            values = {"hold": 0.0, "sell": v_sell}
+
+            choice = logit_choice(values, rng)
+
+            if choice == "hold":
+                if (
+                    pid != self.home_property
+                    and prop.current_rent is None
+                    and not prop.listed_for_rent
+                ):
+                    choice = "let"
+
+            result[pid] = choice
+
+        # Agent-level: buy / buy-to-let / don't buy.
         values = {"none": 0.0}
 
-        # Outside option for buying = best feasible rental's consumption value.
-        best_rent_value = 0.0
-        if purchase_candidates:
-            best_rent_value = max(
-                (val.housing_consumption_value(
-                    p.quality, self.model.config.valuation.quality_value_scale,
-                    self.model.config.valuation.base_housing_value)
-                 for p in purchase_candidates),
-                default=0.0,
-            )
-
-        buy_ceiling = credit.household_max_price(self.cash, self.income + self.rental_income_monthly * 12, self.mortgage_payment_due())
+        buy_ceiling = credit.household_max_price(
+            self.cash, self.income + self.rental_income_monthly * 12, self.mortgage_payment_due()
+        )
         affordable_buy = [p for p in purchase_candidates if p.estimated_value <= buy_ceiling]
         if affordable_buy:
-            # Surplus of best buy
-            best_buy = max(
-                (self.buy_wtp(p) - p.estimated_value for p in affordable_buy), default=0.0
-            )
+            best_buy = max((self.buy_wtp(p) for p in affordable_buy), default=0.0)
             values["buy"] = best_buy
+            values["don't buy"] = (
+                best_buy  # outside option on not becoming an owner-occupier is keeping your bid money
+            )
 
-        btl_ceiling = credit.btl_max_price(self.cash, self.income + self.rental_income_monthly * 12, self.mortgage_payment_due())
+        btl_ceiling = credit.btl_max_price(
+            self.cash, self.income + self.rental_income_monthly * 12, self.mortgage_payment_due()
+        )
         affordable_btl = [p for p in purchase_candidates if p.estimated_value <= btl_ceiling]
         if affordable_btl:
             best_btl = max(
-                (self.btl_wtp(p, market_rent) - p.estimated_value for p in affordable_btl),
+                (self.btl_wtp(p, market_rent) for p in affordable_btl),
                 default=0.0,
             )
             values["buy-to-let"] = best_btl
 
-        # Renting is an option for anyone not currently owner-occupying.
-        if self.is_renter:
-            # Value of renting ~ best available rental consumption value minus current rent burden
-            values["rent"] = best_rent_value * 0.5
+        choice = logit_choice(values, rng)
+        if choice == "don't buy":
+            if self.home_property is None:
+                choice = "rent"
 
-        result["__agent__"] = logit_choice(values, rng)
+        result["__agent__"] = choice
+
         return result
 
     # -- Stage 2: property selection --------------------------------------------
@@ -308,7 +298,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
             return self.btl_wtp(prop, market_rent)
         raise ValueError(f"Unknown purpose: {purpose!r}")
 
-    def compute_rent_bid(self, prop) -> float:
+    def compute_rent_bid(self, prop):
         return self.rent_wtp(prop)
 
     # -- balance-sheet transitions ----------------------------------------------
@@ -331,7 +321,11 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
         # Move in if buying to occupy and currently not owner-occupying.
         if purpose == "buy" and not self.is_owner_occupier:
             old_home = self.home_property
-            if old_home is not None and old_home != prop.id and old_home not in self.owned_properties:
+            if (
+                old_home is not None
+                and old_home != prop.id
+                and old_home not in self.owned_properties
+            ):
                 old_prop = self.model._property_map.get(old_home)
                 if old_prop is not None and old_prop.occupant_id == self.unique_id:
                     old_prop.occupant_id = None
@@ -376,15 +370,23 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
     def evolve_income(self, mu, sd):
         """Apply one month of multiplicative income growth (drawn by the model)."""
         import numpy as np
+
         self.income = float(self.income * np.exp(self.model.rng.normal(mu, sd)))
 
     def distress_sale_candidates(self, market_rent):
-        """Owned properties ranked from least to greatest hold value (sell cheap-to-hold first)."""
-        ranked = [
-            (self.hold_value(self.model._property_map[pid], market_rent),
-             self.model._property_map[pid])
-            for pid in self.owned_properties
-        ]
+        """Owned properties ranked from least to greatest investment value (sell cheap-to-hold first)."""
+        ranked = []
+        for pid in self.owned_properties:
+            prop = self.model._property_map[pid]
+            if prop.current_rent is not None:
+                rent = prop.current_rent
+            else:
+                rent = val.estimate_market_rent(
+                    prop.quality, market_rent, self.model.config.valuation.quality_sensitivity
+                )
+            v_hold = self.btl_wtp(prop, rent)
+            ranked.append((v_hold, prop))
+
         return sorted(ranked, key=lambda item: item[0])
 
     def step(self):
@@ -394,6 +396,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
 # ---------------------------------------------------------------------------
 # InstitutionalAgent
 # ---------------------------------------------------------------------------
+
 
 class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
     """Risk-neutral investor: yield-based valuation, cheap funding, market-wide info."""
@@ -442,16 +445,23 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
             self.expected_price_growth,
             prop.estimated_value,
             ceiling,
-            cfg.valuation.horizon
+            cfg.valuation.horizon,
         )
 
     def hold_value(self, prop, market_rent) -> float:
         cfg = self.model.config
         credit = self.model.credit
         return val.institutional_wtp(
-            prop.quality, cfg.valuation.quality_sensitivity, market_rent,
-            credit.inst_funding_rate, cfg.agent_init.inst_required_return,
-            self.expected_price_growth, self.expected_rent_growth, prop.estimated_value, float("inf"), cfg.valuation.horizon
+            prop.quality,
+            cfg.valuation.quality_sensitivity,
+            market_rent,
+            credit.inst_funding_rate,
+            cfg.agent_init.inst_required_return,
+            self.expected_price_growth,
+            self.expected_rent_growth,
+            prop.estimated_value,
+            float("inf"),
+            cfg.valuation.horizon,
         )
 
     def reservation_price(self, prop, market_rent) -> float:
@@ -476,8 +486,10 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
         feasible = [p for p in purchase_candidates if p.estimated_value <= ceiling]
         values = {"none": 0.0}
         if feasible:
-            best = max((self.acquire_wtp(p, market_rent) - p.estimated_value for p in feasible),
-                       default=0.0)
+            best = max(
+                (self.acquire_wtp(p, market_rent) - p.estimated_value for p in feasible),
+                default=0.0,
+            )
             values["acquire"] = best
         result["__agent__"] = logit_choice(values, rng)
         return result
@@ -499,9 +511,7 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
         rate = credit.inst_funding_rate
         deposit = price * (1.0 - ltv)
         if self.cash < deposit - 1e-9:
-            raise RuntimeError(
-                f"Institution {self.unique_id} cannot cover deposit {deposit:.2f}."
-            )
+            raise RuntimeError(f"Institution {self.unique_id} cannot cover deposit {deposit:.2f}.")
         self.cash -= deposit
         self.portfolio.add(prop.id)
         self._mortgages[prop.id] = (price, ltv, 0, rate)
@@ -526,8 +536,10 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
 
     def distress_sale_candidates(self, market_rent):
         ranked = [
-            (self.hold_value(self.model._property_map[pid], market_rent),
-             self.model._property_map[pid])
+            (
+                self.hold_value(self.model._property_map[pid], market_rent),
+                self.model._property_map[pid],
+            )
             for pid in self.portfolio
         ]
         return sorted(ranked, key=lambda item: item[0])
