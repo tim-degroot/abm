@@ -222,7 +222,7 @@ def main():
     seeds = range(1, N_RUNS + 1)
 
     print(f"Running {N_RUNS} paired replications for: {', '.join(POLICIES_TO_RUN)}")
-    with ProcessPoolExecutor(max_WORKERS=min(WORKERS, N_RUNS)) as executor:
+    with ProcessPoolExecutor(max_workers=min(WORKERS, N_RUNS)) as executor:
         responses = pd.concat(executor.map(run_seed, seeds), ignore_index=True)
 
     summary = summarise(responses)
