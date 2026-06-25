@@ -28,7 +28,7 @@ class SimConfig(BaseModel):
     n_institutions: int = Field(5, gt=0)
     n_properties: int = Field(300, gt=0)
     n_steps: int = Field(720, gt=0)
-    seed: int = 42
+    seed: int = Field(42, ge=0)
 
 
 class SpatialConfig(BaseModel):
@@ -52,7 +52,9 @@ class PropertyInitConfig(BaseModel):
     property_residual_sd: float = Field(0.3, ge=0)
     init_base_price: float = Field(200_000.0, gt=0)
     init_price_quality_sensitivity: float = Field(50_000.0, ge=0)
-    init_ownership_prob: float = Field(0.90, ge=0, le=1) # fraction of households initially allocated an owned home.
+    init_ownership_prob: float = Field(
+        0.90, ge=0, le=1
+    )  # fraction of households initially allocated an owned home.
 
 
 class AgentInitConfig(BaseModel):
@@ -92,7 +94,7 @@ class ValuationConfig(BaseModel):
     quality_value_scale: float = Field(200.0, ge=0)
     # Baseline monthly consumption value of a median (q = 0) home
     base_housing_value: float = Field(700.0, ge=0)
-    horizon = Field(40*12, ge=1)  # valuation horizon
+    horizon: int = Field(40 * 12, ge=1)  # valuation horizon
 
 
 class ExpectationsConfig(BaseModel):
