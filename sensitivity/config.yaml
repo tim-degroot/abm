@@ -20,6 +20,16 @@ steps: 720                 # simulation length (set to e.g. 24 for quick smoke t
 
 
 parameters:
+  - name: n_households
+    path: sim.n_households
+    bounds: [150, 300]
+    distribution: int
+
+  - name: search_radius
+    path: spatial.search_radius
+    bounds: [0, 2]
+    distribution: int
+
   - name: mortgage_rate
     path: credit.mortgage_rate
     bounds: [0.001, 0.01]
@@ -82,10 +92,20 @@ responses:
     reduce: last
     description: "Institutional ownership share at final step"
 
-  - name: inst_marginal_pricer
+  - name: oo_share
+    metric: owner_occupier_share
+    reduce: nanmean
+    description: "Mean owner-occupier share of winning bids"
+
+  - name: landlord_share
+    metric: landlord_share
+    reduce: nanmean
+    description: "Mean landlord share of winning bids"
+
+  - name: inst_share
     metric: institution_share
     reduce: nanmean
-    description: "Mean institutional share of winning bids (marginal pricer)"
+    description: "Mean institutional share of winning bids"
 
   - name: vacancy
     metric: vacancy_rate
