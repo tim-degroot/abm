@@ -58,7 +58,7 @@ class PropertyInitConfig(BaseModel):
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     income_mean: float = Field(30_000.0, gt=0)
-    income_sigma: float = Field(15_000.0, ge=0)
+    income_sigma: float = Field(0.5, ge=0)
     wealth_income_mult_low: float = Field(0.5, ge=0)
     wealth_income_mult_high: float = Field(25.0, ge=0)
     ltv_dist_low: float = Field(0.70, ge=0, le=1)
@@ -66,7 +66,7 @@ class AgentInitConfig(BaseModel):
     risk_aversion_mu: float = Field(1.0, ge=0)
     risk_aversion_sigma: float = Field(0.5, ge=0)
     inst_cash_low: float = Field(1_500_000.0, ge=0)
-    inst_cash_high: float = Field(7_500_000.0, ge=0)
+    inst_cash_high: float = Field(10_000_000.0, ge=0)
     inst_required_return: float = Field(0.0015, ge=0)
     inst_min_yield: float = Field(0.04, ge=0)
     loss_aversion: float = Field(1.30, ge=0)
