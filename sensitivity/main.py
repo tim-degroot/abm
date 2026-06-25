@@ -211,7 +211,7 @@ def cmd_evaluate(args):
     print(f"Evaluating {len(sample_rows)} samples with model_seed={model_seed} "
           f"on {n_cores} cores")
 
-    ctx = get_context("spawn")
+    ctx = get_context("fork")
     with ctx.Pool(n_cores) as pool:
         all_results = []
         with tqdm(total=len(sample_rows), desc=f"seed={model_seed}", file=_sys.stderr) as pbar:
