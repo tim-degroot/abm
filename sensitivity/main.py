@@ -188,7 +188,7 @@ def cmd_evaluate(args):
     """
     sa_cfg = load_config()
     model_seed = args.model_seed
-    n_cores = args.n_cores if args.n_cores is not None else sa_cfg["parallel"]["n_cores"]
+    n_cores = args.cores if args.cores is not None else sa_cfg["parallel"]["n_cores"]
     if n_cores == -1 or n_cores is None:
         n_cores = os.cpu_count()
 
@@ -370,7 +370,7 @@ def _parse_args(argv=None):
 
     p.add_argument("--evaluate", action="store_true", help="Run model evaluations for one seed")
     p.add_argument("--model-seed", type=int, default=None, help="Model RNG seed for this replicate")
-    p.add_argument("--n-cores", type=int, default=None, help="Worker count (overrides config)")
+    p.add_argument("--cores", type=int, default=None, help="Worker count (overrides config)")
 
     p.add_argument("--aggregate", action="store_true", help="Aggregate seeds and compute Sobol indices")
     return p.parse_args(argv)
