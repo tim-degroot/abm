@@ -1,8 +1,7 @@
-"""Configuration schema for the housing-market ABM.
+"""
+Configuration schema for the housing-market ABM.
 
-All parameters are plausible, stylised values (the model is not calibrated to
-micro-data). Every per-period rate, flow and duration is expressed in *monthly*
-units, since one model step is one calendar month.
+Every per-period rate is expressed in *monthly* units.
 
 Sections:
   SimConfig         - run size and seed
@@ -53,10 +52,7 @@ class PropertyInitConfig(BaseModel):
     property_residual_sd: float = Field(0.3, ge=0)
     init_base_price: float = Field(200_000.0, gt=0)
     init_price_quality_sensitivity: float = Field(50_000.0, ge=0)
-    # Fraction of households initially allocated an owned home. Lowered from the
-    # legacy 0.96 (which, combined with zone-matching failures, left the market
-    # ~50% vacant) to a value consistent with the report's ~65% ownership target.
-    init_ownership_prob: float = Field(0.90, ge=0, le=1)
+    init_ownership_prob: float = Field(0.90, ge=0, le=1) # fraction of households initially allocated an owned home.
 
 
 class AgentInitConfig(BaseModel):
@@ -65,26 +61,20 @@ class AgentInitConfig(BaseModel):
     income_sigma: float = Field(0.5, ge=0)
     wealth_income_mult_low: float = Field(0.5, ge=0)
     wealth_income_mult_high: float = Field(25.0, ge=0)
-    # Spread of *legacy* origination LTVs for the starting mortgage book only.
-    # New mortgages during the run use the policy/credit LTV (see credit.py), not
-    # a random draw (fixes the "random origination LTV" bug).
     ltv_dist_low: float = Field(0.70, ge=0, le=1)
     ltv_dist_high: float = Field(0.85, ge=0, le=1)
-    # Household risk-aversion coefficient gamma ~ LogNormal(mu, sigma). Enters
-    # behaviour as a risk *loading* on expected growth: g -> g - gamma * sigma_g.
-    risk_aversion_mu: float = Field(1.0) # -0.3
+    risk_aversion_mu: float = Field(1.0, ge=0)
     risk_aversion_sigma: float = Field(0.5, ge=0)
     inst_cash_low: float = Field(1_500_000.0, ge=0)
     inst_cash_high: float = Field(10_000_000.0, ge=0)
-    inst_required_return: float = Field(0.0015, ge=0)  # monthly, 1.8% APR
+    inst_required_return: float = Field(0.0015, ge=0)
     inst_min_yield: float = Field(0.04, ge=0)
-    # Loss-aversion coefficient lambda > 1 used in the seller's reservation price.
     loss_aversion: float = Field(1.30, ge=0)
 
 
 class CreditConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    mortgage_rate: float = Field(0.00308, ge=0)  # monthly, ~3.7% APR
+    mortgage_rate: float = Field(0.00308, ge=0)
     ltv_limit: float = Field(0.9, ge=0, le=1)
     dti_limit: float = Field(0.33, ge=0, le=1)
     loan_term_months: int = Field(300, gt=0)
@@ -100,31 +90,22 @@ class ValuationConfig(BaseModel):
     quality_sensitivity: float = Field(0.3, ge=0)
     # Conversion of standardised quality to a *monthly* consumption value (money).
     quality_value_scale: float = Field(200.0, ge=0)
-    # Baseline monthly housing-consumption value of a median (q = 0) home (~rent
-    # for a typical home). Calibrated so that, at a representative risk-adjusted
-    # discount-minus-growth denominator (~0.004/mo), the capitalised owner-occupier
-    # value sits near the ~200k price scale; credit constraints then bind for many
-    # buyers. Also keeps the flow positive across the (mean-zero) quality range,
-    # fixing the "negative WTP for half the stock" bug.
+    # Baseline monthly consumption value of a median (q = 0) home
     base_housing_value: float = Field(700.0, ge=0)
+    horizon = Field(40*12, ge=1)  # valuation horizon
 
 
 class ExpectationsConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    # Single EWMA smoothing weight shared by households and institutions and by
-    # the growth and volatility updates:
-    #   E_t = smoothing * E_{t-1} + (1 - smoothing) * signal.
-    # (There is no separate institutional delta or forecast window: institutions
-    # differ only in seeing the global signal and a rolling OLS forecast, both of
-    # which reuse `signal_window`.)
+    # Single EWMA smoothing weight shared across agents and expectations:
+    #   E_t = smoothing * E_{t-1} + (1 - smoothing) * signal
     smoothing: float = Field(0.9, ge=0, le=1)
     # Lookback window (months) for the growth/volatility signals and the OLS.
     signal_window: int = Field(12, gt=0)
     # Initial growth expectations (monthly).
     init_price_growth: float = 0.001667
     init_rent_growth: float = 0.001667
-    # Initial expectations of the *volatility of the growth rate* (monthly std),
-    # updated by the same EWMA as the growth expectations.
+    # Initial expectations of the *volatility of the growth rate* (monthly std)
     init_price_vol: float = Field(0.005, ge=0)
     init_rent_vol: float = Field(0.005, ge=0)
     # Idiosyncratic noise added to expectations each period.
@@ -141,9 +122,6 @@ class MarketConfig(BaseModel):
 
 class MacroConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    # The macro state is fixed within a run (no stochastic transition matrix).
-    # Income grows by a normal draw with the regime's mean/sd each month. Credit
-    # shocks are applied separately and deterministically through the policy layer.
     initial_state: Literal["Boom", "Neutral", "Recession"] = "Neutral"
     boom_mean: float = 0.0025
     boom_sd: float = Field(0.00577, ge=0)
@@ -151,8 +129,8 @@ class MacroConfig(BaseModel):
     neutral_sd: float = Field(0.00289, ge=0)
     recession_mean: float = -0.001667
     recession_sd: float = Field(0.00866, ge=0)
-    # Risk-free monthly rate, used as the institutional outside option.
-    risk_free_rate: float = Field(0.00308, ge=0) # mortgage rate, ~3.7% APR
+    # Risk-free monthly rate, used in the institutional outside option.
+    risk_free_rate: float = Field(0.00308, ge=0)
 
 
 class Config(BaseModel):

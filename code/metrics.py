@@ -1,6 +1,5 @@
-"""Data-collector reporters passed to Mesa's DataCollector.
-
-All functions take the model as their argument.
+"""
+Data-collector reporters passed to Mesa's DataCollector.
 """
 
 import numpy as np
@@ -216,7 +215,6 @@ def household_net_worth_gini(model):
     cum = 0.0
     for i, w in enumerate(nws, start=1):
         cum += i * w
-    # Gini = (2 * sum(i*w_i) / (n * sum(w))) - (n + 1)/n
     return float((2.0 * cum) / (n * total) - (n + 1.0) / n)
 
 

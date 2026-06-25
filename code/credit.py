@@ -1,17 +1,5 @@
-"""The credit environment.
-
-Centralises all financing logic so that each agent class faces one consistent,
-explicit constraint set, and so that the credit *levers* (rates, LTVs, DTI) live
-in exactly one place for the policy experiments and the sensitivity analysis to
-vary.
-
-Key fixes vs. the legacy version:
-  * Every CreditConfig field is plumbed through (btl_funding_rate / btl_ltv were
-    silently dropped before).
-  * `rate` is a *mandatory* argument of the payment/principal helpers, so a
-    household rate can never be silently applied to an institution.
-  * Origination LTV is a config/policy lever per class (household / BTL /
-    institution), not a random draw at bid time.
+"""
+The credit environment.
 """
 
 from __future__ import annotations
@@ -80,10 +68,8 @@ class CreditEnvironment:
     # -- affordability ceilings (one per class) ---------------------------------
 
     def household_max_price(self, cash: float, annual_income: float, existing_monthly_payments: float = 0.0) -> float:
-        """Max price a household can pay: min of deposit and DTI ceilings.
-
-        DTI ceiling after reserving for existing debt payments (symmetric for
-        owner-occupier and BTL purchases).
+        """
+        Max price a household can pay: min of deposit and DTI ceilings.
         """
         ltv = self.ltv_limit
         deposit_ceiling = cash / (1.0 - ltv) if ltv < 1.0 else float("inf")
@@ -99,11 +85,8 @@ class CreditEnvironment:
         return max(0.0, min(deposit_ceiling, income_ceiling))
 
     def btl_max_price(self, cash: float, annual_income: float = 0.0, existing_monthly_payments: float = 0.0) -> float:
-        """Max price for a buy-to-let purchase: min of deposit and DTI ceilings.
-
-        Symmetric with household_max_price — same DTI limit, same amortisation
-        formula, same existing-debt reservation — but using the BTL funding rate
-        and LTV.
+        """
+        Max price for a buy-to-let purchase: min of deposit and DTI ceilings.
         """
         ltv = self.btl_ltv
         deposit_ceiling = cash / (1.0 - ltv) if ltv < 1.0 else float("inf")
