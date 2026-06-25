@@ -32,7 +32,7 @@ parameters:
 
   - name: mortgage_rate
     path: credit.mortgage_rate
-    bounds: [0.001, 0.007]
+    bounds: [0.001, 0.01]
     distribution: log-uniform
 
   - name: ltv_limit
@@ -47,7 +47,7 @@ parameters:
 
   - name: income_mean
     path: agent_init.income_mean
-    bounds: [25_000, 55_000]
+    bounds: [30_000, 6_000]
     distribution: uniform
 
   - name: signal_window
