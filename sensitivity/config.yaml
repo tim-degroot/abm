@@ -6,13 +6,13 @@
 
 
 sobol:
-  N: 512                     # base sample size (total runs = N × (2k+2)).
+  N: 8                     # base sample size (total runs = N × (2k+2)).
                             # SMOKE size. For production use N: 512 or 1024 so the
                             # Sobol confidence intervals are tight.
   seed: 42                 # rng seed for Saltelli sequence
 
 stochastic:
-  n_seeds: 10              # stochastic replicates per parameter set.
+  n_seeds: 1              # stochastic replicates per parameter set.
                             # Run ``evaluate --model-seed S`` for each S in 0..9.
                             # Not read by the code — it counts the seed_*.csv files.
 
@@ -45,35 +45,45 @@ parameters:
     bounds: [0.20, 0.45]
     distribution: uniform
 
-  - name: btl_ltv
-    path: credit.btl_ltv
-    bounds: [0.50, 0.85]
+  - name: income_mean
+    path: agent_init.income_mean
+    bounds: [20_000, 60_000]
     distribution: uniform
 
-  - name: inst_ltv
-    path: credit.inst_ltv
-    bounds: [0.40, 0.75]
-    distribution: uniform
+  - name: signal_window
+    path: expectations.signal_window
+    bounds: [6, 36]
+    distribution: int
 
-  - name: inst_required_return
-    path: agent_init.inst_required_return
-    bounds: [0.001, 0.01]
-    distribution: log-uniform
+  # - name: btl_ltv
+  #   path: credit.btl_ltv
+  #   bounds: [0.50, 0.85]
+  #   distribution: uniform
 
-  - name: loss_aversion
-    path: agent_init.loss_aversion
-    bounds: [1.0, 2.5]      # loss aversion is lambda >= 1 by definition
-    distribution: uniform
+  # - name: inst_ltv
+  #   path: credit.inst_ltv
+  #   bounds: [0.40, 0.75]
+  #   distribution: uniform
 
-  - name: risk_aversion_mu
-    path: agent_init.risk_aversion_mu
-    bounds: [-2.0, 0.0]     # log-mean of household risk aversion gamma
-    distribution: uniform
+  # - name: inst_required_return
+  #   path: agent_init.inst_required_return
+  #   bounds: [0.001, 0.01]
+  #   distribution: log-uniform
 
-  - name: smoothing
-    path: expectations.smoothing
-    bounds: [0.5, 0.98]     # EWMA persistence of expectations
-    distribution: uniform
+  # - name: loss_aversion
+  #   path: agent_init.loss_aversion
+  #   bounds: [1.0, 2.5]      # loss aversion is lambda >= 1 by definition
+  #   distribution: uniform
+
+  # - name: risk_aversion_mu
+  #   path: agent_init.risk_aversion_mu
+  #   bounds: [-2.0, 0.0]     # log-mean of household risk aversion gamma
+  #   distribution: uniform
+
+  # - name: smoothing
+  #   path: expectations.smoothing
+  #   bounds: [0.5, 0.98]     # EWMA persistence of expectations
+  #   distribution: uniform
 
 
 responses:
