@@ -129,20 +129,25 @@ def compute_responses(df, sa_cfg):
 
 
 def run_single(args):
-    """Run one model instance and return scalar responses."""
+    """Run one model instance and return sample_id + scalar responses."""
     params, model_seed, sa_cfg = args
     from code.model import HousingModel
 
+    sample_id = params.get("sample_id", -1)
     try:
         config = build_config(params, sa_cfg, seed=model_seed)
         model = HousingModel(config=config)
         for _ in range(config.sim.n_steps):
             model.step()
         df = model.datacollector.get_model_vars_dataframe()
-        return compute_responses(df, sa_cfg)
+        result = compute_responses(df, sa_cfg)
+        result["sample_id"] = sample_id
+        return result
     except Exception as e:
         print(f"  FAILED: {params} — {e}")
-        return {r["name"]: float("nan") for r in sa_cfg["responses"]}
+        result = {r["name"]: float("nan") for r in sa_cfg["responses"]}
+        result["sample_id"] = sample_id
+        return result
 
 
 # =========================================================================
@@ -217,7 +222,7 @@ def cmd_evaluate(args):
                 pbar.update()
 
     response_df = pd.DataFrame(all_results)
-    full_df = pd.concat([samples_df, response_df], axis=1)
+    full_df = samples_df.merge(response_df, on="sample_id", how="left")
 
     out_dir = sa_cfg["output"]["dir"]
     os.makedirs(out_dir, exist_ok=True)
