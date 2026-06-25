@@ -6,7 +6,7 @@
 
 
 sobol:
-  N: 2                     # base sample size (total runs = N × (2k+2)).
+  N: 512                     # base sample size (total runs = N × (2k+2)).
                             # SMOKE size. For production use N: 512 or 1024 so the
                             # Sobol confidence intervals are tight.
   seed: 42                 # rng seed for Saltelli sequence
@@ -16,7 +16,7 @@ stochastic:
                             # Run ``evaluate --model-seed S`` for each S in 0..9.
                             # Not read by the code — it counts the seed_*.csv files.
 
-steps: 24                 # simulation length (set to e.g. 24 for quick smoke tests)
+steps: 720                 # simulation length (set to e.g. 24 for quick smoke tests)
 
 
 parameters:
