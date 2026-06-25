@@ -24,10 +24,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SimConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    n_households: int = Field(1000, gt=0)
+    n_households: int = Field(500, gt=0)
     n_institutions: int = Field(5, gt=0)
-    n_properties: int = Field(1250, gt=0)
-    n_steps: int = Field(240, gt=0)
+    n_properties: int = Field(625, gt=0)
+    n_steps: int = Field(600, gt=0)
     seed: int = Field(42, ge=0)
 
 
@@ -67,8 +67,8 @@ class AgentInitConfig(BaseModel):
     ltv_dist_high: float = Field(0.85, ge=0, le=1)
     risk_aversion_mu: float = Field(1.0, ge=0)
     risk_aversion_sigma: float = Field(0.5, ge=0)
-    inst_cash_low: float = Field(15_000_000.0, ge=0)
-    inst_cash_high: float = Field(100_000_000.0, ge=0)
+    inst_cash_low: float = Field(7_500_000.0, ge=0)
+    inst_cash_high: float = Field(50_000_000.0, ge=0)
     inst_required_return: float = Field(0.0015, ge=0)
     inst_min_yield: float = Field(0.04, ge=0)
     loss_aversion: float = Field(1.30, ge=0)
