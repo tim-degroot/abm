@@ -505,6 +505,9 @@ class InstitutionalAgent(_BalanceSheetMixin, mesa.Agent):
                 default=0.0,
             )
             values["acquire"] = best
+            values["don't acquire"] = (
+                best  # outside option on not acquiring is keeping your bid money
+            )
         result["__agent__"] = logit_choice(values, rng)
         return result
 

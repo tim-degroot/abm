@@ -1,18 +1,15 @@
 """
 Configuration schema for the housing-market ABM.
 
-Every per-period rate is expressed in *monthly* units.
-
 Sections:
   SimConfig         - run size and seed
-  SpatialConfig     - zone grid (coarse spatial abstraction; houses sit in zones)
+  SpatialConfig     - zone grid (coarse spatial abstraction - houses sit in zones)
   PropertyInitConfig- housing-stock initialisation
   AgentInitConfig   - agent endowments and heterogeneity
-  CreditConfig      - the credit environment (the lever the experiments vary)
+  CreditConfig      - the credit environment
   ValuationConfig   - WTP / quality-to-money conversion
   ExpectationsConfig- adaptive-expectation and volatility parameters
-  MacroConfig       - fixed income-growth regime (no stochastic transition; see
-                      policies.py for designed credit-shock experiments)
+  MacroConfig       - fixed income-growth regime
   MarketConfig      - tenancy / lease parameters
 """
 
@@ -48,19 +45,21 @@ class SpatialConfig(BaseModel):
 
 class PropertyInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    zone_quality_sd: float = Field(0.8, ge=0)
-    property_residual_sd: float = Field(0.3, ge=0)
+    zone_quality_sd: float = Field(0.8, ge=0)  # between zones
+    property_residual_sd: float = Field(0.3, ge=0)  # within zones
     init_base_price: float = Field(200_000.0, gt=0)
-    init_price_quality_sensitivity: float = Field(20_000.0, ge=0)
+    init_price_quality_sensitivity: float = Field(25_000.0, ge=0)
     init_ownership_prob: float = Field(
-        0.90, ge=0, le=1
-    )  # fraction of households initially allocated an owned home.
+        0.80, ge=0, le=1
+    )  # fraction of households initially allocated an owned home
 
 
 class AgentInitConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    income_mean: float = Field(36_700.0, gt=0)  # YEARLY
-    income_sigma: float = Field(0.5, ge=0)
+    income_mean: float = Field(
+        36_700.0, gt=0
+    )  # absolute - and YEARLY for readablity, the all other flows are monthly
+    income_sigma: float = Field(0.5, ge=0)  # relative (lognormal)
     wealth_income_mult_low: float = Field(0.5, ge=0)
     wealth_income_mult_high: float = Field(25.0, ge=0)
     ltv_dist_low: float = Field(0.70, ge=0, le=1)
@@ -79,7 +78,7 @@ class CreditConfig(BaseModel):
     mortgage_rate: float = Field(0.00308, ge=0)
     ltv_limit: float = Field(0.9, ge=0, le=1)
     dti_limit: float = Field(0.4, ge=0, le=1)
-    loan_term_months: int = Field(300, gt=0)
+    loan_term_months: int = Field(240, gt=0)
     btl_funding_rate: float = Field(0.008, ge=0)
     btl_ltv: float = Field(0.50, ge=0, le=1)
     inst_funding_rate: float = Field(0.0045, ge=0)
@@ -91,10 +90,10 @@ class ValuationConfig(BaseModel):
     # Rent sensitivity to quality: rent = avg_rent * (1 + quality_sensitivity * q).
     quality_sensitivity: float = Field(0.3, ge=0)
     # Conversion of standardised quality to a *monthly* consumption value (money).
-    quality_value_scale: float = Field(200.0, ge=0)
+    quality_value_scale: float = Field(250.0, ge=0)
     # Baseline monthly consumption value of a median (q = 0) home
-    base_housing_value: float = Field(700.0, ge=0)
-    horizon: int = Field(40 * 12, ge=1)  # valuation horizon
+    base_housing_value: float = Field(800.0, ge=0)
+    horizon: int = Field(40 * 12, ge=1)  # valuation horizon (months)
 
 
 class ExpectationsConfig(BaseModel):
@@ -103,7 +102,7 @@ class ExpectationsConfig(BaseModel):
     #   E_t = smoothing * E_{t-1} + (1 - smoothing) * signal
     smoothing: float = Field(0.9, ge=0, le=1)
     # Lookback window (months) for the growth/volatility signals and the OLS.
-    signal_window: int = Field(12, gt=0)
+    signal_window: int = Field(18, gt=0)
     # Initial growth expectations (monthly).
     init_price_growth: float = 0.001667
     init_rent_growth: float = 0.001667
@@ -131,8 +130,6 @@ class MacroConfig(BaseModel):
     neutral_sd: float = Field(0.00289, ge=0)
     recession_mean: float = -0.001667
     recession_sd: float = Field(0.00866, ge=0)
-    # Risk-free monthly rate, used in the institutional outside option.
-    risk_free_rate: float = Field(0.00308, ge=0)
 
 
 class Config(BaseModel):

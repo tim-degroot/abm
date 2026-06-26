@@ -3,7 +3,6 @@ The credit environment.
 """
 
 from __future__ import annotations
-
 from config import CreditConfig
 
 
@@ -67,7 +66,9 @@ class CreditEnvironment:
 
     # -- affordability ceilings (one per class) ---------------------------------
 
-    def household_max_price(self, cash: float, annual_income: float, existing_monthly_payments: float = 0.0) -> float:
+    def household_max_price(
+        self, cash: float, annual_income: float, existing_monthly_payments: float = 0.0
+    ) -> float:
         """
         Max price a household can pay: min of deposit and DTI ceilings.
         """
@@ -84,7 +85,9 @@ class CreditEnvironment:
         income_ceiling = max_principal / ltv if ltv > 0 else float("inf")
         return max(0.0, min(deposit_ceiling, income_ceiling))
 
-    def btl_max_price(self, cash: float, annual_income: float = 0.0, existing_monthly_payments: float = 0.0) -> float:
+    def btl_max_price(
+        self, cash: float, annual_income: float = 0.0, existing_monthly_payments: float = 0.0
+    ) -> float:
         """
         Max price for a buy-to-let purchase: min of deposit and DTI ceilings.
         """
@@ -107,7 +110,13 @@ class CreditEnvironment:
             return float("inf")
         return max(0.0, cash / (1.0 - self.inst_ltv))
 
-    def max_price(self, purpose: str, cash: float, annual_income: float = 0.0, existing_monthly_payments: float = 0.0) -> float:
+    def max_price(
+        self,
+        purpose: str,
+        cash: float,
+        annual_income: float = 0.0,
+        existing_monthly_payments: float = 0.0,
+    ) -> float:
         """Unified affordability ceiling by purpose."""
         if purpose == "buy":
             return self.household_max_price(cash, annual_income, existing_monthly_payments)
