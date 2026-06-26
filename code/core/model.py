@@ -21,14 +21,14 @@ import numpy as np
 from mesa.datacollection import DataCollector
 from mesa.discrete_space import OrthogonalVonNeumannGrid
 
-from abm.code.settings.config import Config
-from abm.code.settings.policies import NoPolicy
-from abm.code.core.properties import Property
-from abm.code.core.credit import CreditEnvironment
-from abm.code.core.markets import OwnershipMarket, RentalMarket
-from abm.code.core.agents import HouseholdAgent, InstitutionalAgent
-import abm.code.core.expectations as exp
-from abm.code.settings.metrics import MODEL_REPORTERS
+from code.settings.config import Config
+from code.settings.policies import NoPolicy
+from code.core.properties import Property
+from code.core.credit import CreditEnvironment
+from code.core.markets import OwnershipMarket, RentalMarket
+from code.core.agents import HouseholdAgent, InstitutionalAgent
+import code.core.expectations as exp
+from code.settings.metrics import MODEL_REPORTERS
 
 
 class HousingModel(mesa.Model):

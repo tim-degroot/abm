@@ -14,9 +14,9 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from abm.code.settings.config import Config
-from abm.code.core.model import HousingModel
-from abm.code.settings.policies import EXPERIMENTS, NoPolicy
+from code.settings.config import Config
+from code.core.model import HousingModel
+from code.settings.policies import EXPERIMENTS, NoPolicy
 
 plt.switch_backend("Agg")  # for headless servers
 

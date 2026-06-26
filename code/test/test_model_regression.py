@@ -10,9 +10,9 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "code"))
 
-from abm.code.settings.config import Config
-from abm.code.core.model import HousingModel
-from abm.code.core.agents import HouseholdAgent, InstitutionalAgent
+from code.settings.config import Config
+from code.core.model import HousingModel
+from code.core.agents import HouseholdAgent, InstitutionalAgent
 
 _N_STEPS = 24
 

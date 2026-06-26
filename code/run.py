@@ -1,4 +1,4 @@
-"""Entry point for the housing market ABM."""
+"""Entry point for the housing market """
 
 import argparse
 import os
@@ -10,7 +10,7 @@ _RESULTS_DIR = os.path.join(os.path.dirname(__file__), "../results")
 
 
 def _parse_args(argv):
-    parser = argparse.ArgumentParser(description="Run the housing market ABM.")
+    parser = argparse.ArgumentParser(description="Run the housing market ")
     parser.add_argument("--steps", "-s", type=int, help="Number of simulation steps")
     parser.add_argument(
         "--experiment",
@@ -30,11 +30,11 @@ def _parse_args(argv):
 
 
 def main():
-    from abm.code.settings.config import Config
-    from abm.code.core.model import HousingModel
-    from abm.code.settings.policies import EXPERIMENTS, NoPolicy
-    from abm.code.settings.metrics import collect_zone_metrics
-    from abm.code.plotting.plot_run import plot_summary
+    from code.settings.config import Config
+    from code.core.model import HousingModel
+    from code.settings.policies import EXPERIMENTS, NoPolicy
+    from code.settings.metrics import collect_zone_metrics
+    from code.plotting.plot_run import plot_summary
 
     args = _parse_args(sys.argv[1:])
 

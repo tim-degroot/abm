@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from abm.code.core.markets import OwnershipMarket, RentalMarket, Transaction, RentalTransaction
+from code.core.markets import OwnershipMarket, RentalMarket, Transaction, RentalTransaction
 
 
 class TestMarketEmpty(unittest.TestCase):

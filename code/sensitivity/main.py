@@ -62,7 +62,7 @@ def map_params(param_values, sa_cfg):
 
 def build_config(params, sa_cfg, seed=None):
     """Build a Config with overridden parameter values and optional seed."""
-    from abm.code.settings.config import Config
+    from code.settings.config import Config
 
     cfg = Config()
     section_overrides = {}
@@ -115,7 +115,7 @@ def compute_responses(df, sa_cfg):
 def run_single(args):
     """Run one model instance and return sample_id + scalar responses."""
     params, model_seed, sa_cfg = args
-    from abm.code.core.model import HousingModel
+    from code.core.model import HousingModel
 
     sample_id = params.get("sample_id", -1)
     try:

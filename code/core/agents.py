@@ -5,8 +5,8 @@ Agent definitions: households and institutional investors.
 from __future__ import annotations
 
 import mesa
-import abm.code.core.valuation as val
-from abm.code.core.utility import risk_adjusted_growth, logit_choice, logit_probabilities
+import code.core.valuation as val
+from code.core.utility import risk_adjusted_growth, logit_choice, logit_probabilities
 
 # ---------------------------------------------------------------------------
 # Mixin: shared balance-sheet mechanics
@@ -372,6 +372,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
         import numpy as np
 
         self.income = float(self.income * np.exp(self.model.rng.normal(mu, sd)))
+        self.cash += self.income / 12
 
     def distress_sale_candidates(self, market_rent):
         """Owned properties ranked from least to greatest investment value (sell cheap-to-hold first)."""

@@ -8,7 +8,7 @@ _ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "code"))
 
-from abm.code.core.expectations import (
+from code.core.expectations import (
     adaptive_update,
     growth_signal,
     volatility_signal,
@@ -178,7 +178,7 @@ class TestInstitutionalPriceForecast(unittest.TestCase):
 
 class TestInstitutionalRentGrowthSignal(unittest.TestCase):
     def test_delegates_to_growth_signal(self):
-        from abm.code.core.expectations import inst_rent_growth_signal
+        from code.core.expectations import inst_rent_growth_signal
 
         result = inst_rent_growth_signal(
             [{"rent": 1000}, {"rent": 1010}, {"rent": 1020}],

@@ -5,7 +5,7 @@ Usage:
 """
 
 from __future__ import annotations
-from abm.code.core.credit import CreditEnvironment
+from code.core.credit import CreditEnvironment
 
 
 class NoPolicy:

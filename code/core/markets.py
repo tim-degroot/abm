@@ -103,7 +103,11 @@ class RentalMarket:
     def resolve(self) -> list[RentalTransaction]:
         transactions = []
         assigned: set[int] = set()
-        for pid, listing in self._listings.items():
+        for pid, listing in sorted(
+            self._listings.items(),
+            key=lambda item: max((b["amount"] for b in item[1]["bids"]), default=0),
+            reverse=True,
+        ):
             bids = [b for b in listing["bids"] if b["bidder_id"] not in assigned]
             if not bids:
                 continue

@@ -6,7 +6,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "code"))
 
-from abm.code.core.valuation import (
+from code.core.valuation import (
     housing_consumption_value,
     estimate_market_rent,
     _dcf_price,

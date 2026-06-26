@@ -3,7 +3,7 @@ Data-collector reporters passed to Mesa's DataCollector.
 """
 
 import numpy as np
-from abm.code.core.agents import HouseholdAgent, InstitutionalAgent
+from code.core.agents import HouseholdAgent, InstitutionalAgent
 
 
 def avg_sale_price(model):

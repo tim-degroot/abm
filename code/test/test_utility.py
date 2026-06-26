@@ -8,7 +8,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "code"))
 
-from abm.code.core.utility import risk_adjusted_growth, logit_choice, logit_probabilities
+from code.core.utility import risk_adjusted_growth, logit_choice, logit_probabilities
 
 
 class TestRiskAdjustedGrowth(unittest.TestCase):
