@@ -276,6 +276,9 @@ class HousingModel(mesa.Model):
         # 4. mark to market
         self._mark_to_market()
 
+        # Pre-compute candidate indices for action selection
+        self._build_candidate_index()
+
         # 5. EXPECTATIONS (single source of truth)
         self._update_expectations()
 
@@ -291,6 +294,7 @@ class HousingModel(mesa.Model):
         # 7. ownership auction
         own_market = OwnershipMarket(step=self.steps)
         self._list_for_sale(own_market, actions, distress, market_rent)
+        self._sync_listed_set()
         self._submit_purchase_bids(own_market, actions, market_rent)
         sale_txns = own_market.resolve()
         self._apply_ownership_transactions(sale_txns)
@@ -450,26 +454,59 @@ class HousingModel(mesa.Model):
                 prop.tenancy_months = 0
                 prop.listed_for_rent = True
 
+    # --------------------------------------------------------- candidate indices
+    def _build_candidate_index(self):
+        """Pre-compute zone→property-ID indices for O(1) candidate lookups."""
+        by_zone = {z: set() for z in range(self.n_zones)}
+        rental_by_zone = {z: set() for z in range(self.n_zones)}
+        for p in self.properties:
+            by_zone[p.zone].add(p.id)
+            if p.listed_for_rent and p.occupant_id is None:
+                rental_by_zone[p.zone].add(p.id)
+        self._candidate_by_zone = by_zone
+        self._rental_by_zone = rental_by_zone
+        self._all_property_ids = set(self._property_map.keys())
+        self._sync_listed_set()
+
+    def _sync_listed_set(self):
+        """Fast update of the listed-for-sale set (after _list_for_sale changes it)."""
+        self._listed_set = {p.id for p in self.properties if p.listed_for_sale}
+
     # --------------------------------------------------------------- candidates
     def _purchase_candidates(self, agent, listed_only=True):
         if isinstance(agent, InstitutionalAgent):
-            cands = [p for p in self.properties if p.owner_id != agent.unique_id]
+            cand_ids = set(self._all_property_ids)
         else:
             zones = self.get_household_search_zones(agent.home_zone)
-            cands = [p for p in self.properties if p.zone in zones and p.owner_id != agent.unique_id]
+            cand_ids = set()
+            for z in zones:
+                cand_ids.update(self._candidate_by_zone[z])
+        cand_ids.difference_update(agent.owned_properties)
         if listed_only:
-            cands = [p for p in cands if p.listed_for_sale]
-        return cands
+            cand_ids.intersection_update(self._listed_set)
+        return [self._property_map[pid] for pid in cand_ids]
 
     def _rental_candidates(self, agent):
-        listed = [
-            p for p in self.properties
-            if p.listed_for_rent and p.occupant_id is None and p.owner_id != agent.unique_id
-        ]
+        if not hasattr(self, "_rental_by_zone"):
+            # Fallback during __init__ before index is built
+            listed = [
+                p for p in self.properties
+                if p.listed_for_rent and p.occupant_id is None and p.owner_id != agent.unique_id
+            ]
+            if agent.home_property is None:
+                return listed
+            zones = self.get_household_search_zones(agent.home_zone)
+            return [p for p in listed if p.zone in zones]
+
         if agent.home_property is None:
-            return listed  # unhoused search the whole market
-        zones = self.get_household_search_zones(agent.home_zone)
-        return [p for p in listed if p.zone in zones]
+            cand_ids = set().union(*self._rental_by_zone.values())
+        else:
+            zones = self.get_household_search_zones(agent.home_zone)
+            cand_ids = set()
+            for z in zones:
+                cand_ids.update(self._rental_by_zone[z])
+        cand_ids.difference_update(agent.owned_properties)
+        return [self._property_map[pid] for pid in cand_ids]
 
     # ----------------------------------------------------------------- distress
     def _plan_distress_sales(self, market_rent):
