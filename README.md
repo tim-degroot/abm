@@ -20,6 +20,14 @@ git clone https://github.com/tim-degroot/abm.git
 uv run run.py
 ```
 
+## Tests
+
+```bash
+uv run -m unittest                  # run all tests
+uv run -m unittest -v               # verbose mode
+uv run -m unittest test.test_credit # single module
+```
+
 ## Policies
 
 Policies are the design framework used for experiments on our model. These policies are defined in `code/policies.py` where their effects and parameters can be changed.
