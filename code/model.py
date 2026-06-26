@@ -312,6 +312,12 @@ class HousingModel(mesa.Model):
             and a.home_property is None
         ]
         self._list_for_rent(actions)
+        # Refresh rental index after _list_for_rent added new listings
+        for p in self.properties:
+            if p.listed_for_rent and p.occupant_id is None:
+                self._rental_by_zone[p.zone].add(p.id)
+            else:
+                self._rental_by_zone[p.zone].discard(p.id)
         self._run_rental_market(renters, step=self.steps, market_rent=market_rent)
 
         # 9. mortgage servicing
