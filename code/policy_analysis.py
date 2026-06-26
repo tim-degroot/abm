@@ -42,9 +42,9 @@ OUTPUT_DIR = Path(__file__).resolve().parent.parent / "results" / "credit_shocks
 
 POLICIES_TO_RUN = [
     "rate-up",
-    # "rate-down",
-    # "ltv-tighten",
-    # "ltv-loosen",
+    "rate-down",
+    "ltv-tighten",
+    "ltv-loosen",
 ]
 
 TOTAL_STEPS = SHOCK_STEP + POST_SHOCK_MONTHS
@@ -112,42 +112,36 @@ def run_model(seed, policy, initial=None):
     return rolling_metrics(data)
 
 
-def run_seed(seed):
-    """Run a matched baseline and policy path for each selected policy."""
-    responses = []
+def run_policy_seed(args):
+    """Run a matched baseline and shock path for one (seed, policy_name)."""
+    seed, policy_name = args
+    policy = EXPERIMENTS[policy_name](step=SHOCK_STEP)
+    initial = getattr(policy, "initial", None)
+    baseline = run_model(seed, NoPolicy(), initial=initial)
+    shocked = run_model(seed, policy, initial=initial)
+    paired = baseline.merge(shocked, on="month", suffixes=("_base", "_shock"))
+    response = pd.DataFrame(
+        {
+            "policy": policy_name,
+            "seed": seed,
+            "event_month": paired["month"] - SHOCK_STEP,
+        }
+    )
 
-    for policy_name in POLICIES_TO_RUN:
-        policy = EXPERIMENTS[policy_name](step=SHOCK_STEP)
-        initial = getattr(policy, "initial", None)
-        baseline = run_model(seed, NoPolicy(), initial=initial)
-        shocked = run_model(seed, policy, initial=initial)
-        paired = baseline.merge(shocked, on="month", suffixes=("_base", "_shock"))
-        response = pd.DataFrame(
-            {
-                "policy": policy_name,
-                "seed": seed,
-                "event_month": paired["month"] - SHOCK_STEP,
-            }
+    for metric in ("sale_price", "rent"):
+        response[metric] = 100 * (
+            paired[f"{metric}_shock"] / paired[f"{metric}_base"] - 1
+        )
+    for metric in ("owner_occupier", "private_landlord", "institution"):
+        response[metric] = 100 * (
+            paired[f"{metric}_shock"] - paired[f"{metric}_base"]
         )
 
-        for metric in ("sale_price", "rent"):
-            response[metric] = 100 * (
-                paired[f"{metric}_shock"] / paired[f"{metric}_base"] - 1
-            )
-        for metric in ("owner_occupier", "private_landlord", "institution"):
-            response[metric] = 100 * (
-                paired[f"{metric}_shock"] - paired[f"{metric}_base"]
-            )
-
-        responses.append(
-            response[
-                response["event_month"].between(
-                    -PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS
-                )
-            ]
+    return response[
+        response["event_month"].between(
+            -PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS
         )
-
-    return pd.concat(responses, ignore_index=True)
+    ]
 
 
 # Summary and plotting 
@@ -217,20 +211,22 @@ def plot_policy(policy_name, summary):
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    seeds = range(1, N_RUNS + 1)
+    items = [(s, p) for s in range(1, N_RUNS + 1) for p in POLICIES_TO_RUN]
 
-    print(f"Running {N_RUNS} paired replications for: {', '.join(POLICIES_TO_RUN)}")
-    with ProcessPoolExecutor(max_workers=min(WORKERS, N_RUNS)) as executor:
-        futures = {executor.submit(run_seed, seed): seed for seed in seeds}
+    print(f"Running {len(items)} items ({N_RUNS} seeds \u00d7 {len(POLICIES_TO_RUN)} policies) on {min(WORKERS, len(items))} workers")
+    with ProcessPoolExecutor(max_workers=min(WORKERS, len(items))) as executor:
+        futures = {executor.submit(run_policy_seed, item): item for item in items}
         results = []
         for future in tqdm(
             as_completed(futures),
-            total=len(seeds),
-            desc="Replications",
-            unit="seed",
+            total=len(items),
+            desc="Items",
+            unit="item",
         ):
             results.append(future.result())
-        responses = pd.concat(results, ignore_index=True)
+    responses = pd.concat(results, ignore_index=True)
+    responses.to_csv(OUTPUT_DIR / "responses.csv", index=False)
+    print(f"Saved results in {OUTPUT_DIR}/responses.csv")
 
     summary = summarise(responses)
     for policy_name in POLICIES_TO_RUN:
