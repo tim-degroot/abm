@@ -604,7 +604,7 @@ class HousingModel(mesa.Model):
 
     # ------------------------------------------------------------- apply txns
     def _apply_ownership_transactions(self, transactions):
-        valid = []
+        applied = []
         for txn in transactions:
             buyer = self._agent_map.get(txn.buyer_id)
             seller = self._agent_map.get(txn.seller_id)
@@ -612,15 +612,9 @@ class HousingModel(mesa.Model):
                 continue
             ltv = self.credit.origination_ltv(txn.purpose)
             deposit = txn.price * (1.0 - ltv)
-            if buyer.cash < deposit - 1e-9:  # tight deposit-feasibility guard
+            if buyer.cash < deposit - 1e-9:
                 continue
-            valid.append(txn)
-
-        for txn in valid:
             prop = self._property_map[txn.property_id]
-            seller = self._agent_map[txn.seller_id]
-            buyer = self._agent_map[txn.buyer_id]
-            # evict / move out of the sold unit
             if prop.occupant_id is not None and prop.occupant_id != txn.seller_id:
                 occ = self._agent_map.get(prop.occupant_id)
                 if isinstance(occ, HouseholdAgent):
@@ -633,9 +627,10 @@ class HousingModel(mesa.Model):
             prop.listed_for_rent = False
             prop.current_rent = None
             buyer.acquire_property(prop, txn.price, txn.purpose)
+            applied.append(txn)
 
-        self.this_step_transactions = valid
-        self.all_transactions.extend(valid)
+        self.this_step_transactions = applied
+        self.all_transactions.extend(applied)
 
     def _apply_rental_transactions(self, transactions):
         applied = []
