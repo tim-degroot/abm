@@ -49,7 +49,7 @@ Upon reviewing the configuration within the `code/policy_analysis.py` file this 
 uv run code/policy_analysis.py
 ```
 
-This produces `responses.csv` with all results and a response figure per experiment in `results/credit_shocks/`.
+This produces `responses.csv` with all results, a response figure per experiment, and a winner-share comparison across policies in `results/policy_analysis/`. Use `--replot` to regenerate figures from an existing `responses.csv` without re-running models.
 
 ## Sensitivity Analysis (Sobol)
 

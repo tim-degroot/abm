@@ -15,6 +15,7 @@ Configure the run by editing the configuration block below: choose the policies 
 stochastic replications (N_RUNS), shock month (SHOCK_STEP), plotting horizon, etc.
 """
 
+import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -209,29 +210,85 @@ def plot_policy(policy_name, summary):
     plt.close(figure)
 
 
-def main():
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    items = [(s, p) for s in range(1, N_RUNS + 1) for p in POLICIES_TO_RUN]
+def plot_comparison(policy_names, summary):
+    """N×1 grid comparing winner-share responses across policies."""
+    n_policies = len(policy_names)
+    fig, axes = plt.subplots(n_policies, 1, figsize=(9, 3 * n_policies + 1), sharex=True)
+    if n_policies == 1:
+        axes = [axes]
 
-    print(f"Running {len(items)} items ({N_RUNS} seeds \u00d7 {len(POLICIES_TO_RUN)} policies) on {min(WORKERS, len(items))} workers")
-    with ProcessPoolExecutor(max_workers=min(WORKERS, len(items))) as executor:
-        futures = {executor.submit(run_policy_seed, item): item for item in items}
-        results = []
-        for future in tqdm(
-            as_completed(futures),
-            total=len(items),
-            desc="Items",
-            unit="item",
-        ):
-            results.append(future.result())
-    responses = pd.concat(results, ignore_index=True)
-    responses.to_csv(OUTPUT_DIR / "responses.csv", index=False)
-    print(f"Saved results in {OUTPUT_DIR}/responses.csv")
+    metrics = {
+        "owner_occupier": "Owner-occupier",
+        "private_landlord": "Private landlord",
+        "institution": "Institution",
+    }
+
+    for ax, policy in zip(axes, policy_names):
+        policy_data = summary[summary["policy"] == policy]
+
+        for metric, label in metrics.items():
+            values = policy_data[policy_data["metric"] == metric].sort_values("event_month")
+            line = ax.plot(values["event_month"], values["mean"], label=label)[0]
+            ax.fill_between(
+                values["event_month"].to_numpy(),
+                values["lower"].to_numpy(),
+                values["upper"].to_numpy(),
+                color=line.get_color(),
+                alpha=0.12,
+            )
+
+        ax.axhline(0, color="black", linewidth=0.8)
+        ax.axvline(0, color="black", linewidth=0.8, linestyle="--")
+        ax.set_xlim(-PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS)
+        ax.set_ylabel("Winner-share response (pp)")
+        ax.set_title(policy.replace("-", " ").title())
+        ax.grid(alpha=0.25)
+        ax.legend()
+
+    axes[-1].set_xlabel("Months relative to permanent policy shift")
+    fig.tight_layout()
+    path = OUTPUT_DIR / "winner_share_comparison.png"
+    fig.savefig(path, dpi=300)
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Paired credit-shock analysis.")
+    parser.add_argument("--replot", action="store_true",
+                        help="Skip model runs; re-plot from existing responses.csv")
+    args = parser.parse_args()
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.replot:
+        csv_path = OUTPUT_DIR / "responses.csv"
+        if not csv_path.exists():
+            raise SystemExit(f"{csv_path} not found. Run without --replot first.")
+        responses = pd.read_csv(csv_path)
+        print(f"Loaded {len(responses)} rows from {csv_path}")
+    else:
+        items = [(s, p) for s in range(1, N_RUNS + 1) for p in POLICIES_TO_RUN]
+        print(f"Running {len(items)} items ({N_RUNS} seeds \u00d7 {len(POLICIES_TO_RUN)} policies) on {min(WORKERS, len(items))} workers")
+        with ProcessPoolExecutor(max_workers=min(WORKERS, len(items))) as executor:
+            futures = {executor.submit(run_policy_seed, item): item for item in items}
+            results = []
+            for future in tqdm(
+                as_completed(futures),
+                total=len(items),
+                desc="Items",
+                unit="item",
+            ):
+                results.append(future.result())
+        responses = pd.concat(results, ignore_index=True)
+        responses.to_csv(OUTPUT_DIR / "responses.csv", index=False)
+        print(f"Saved results in {OUTPUT_DIR}/responses.csv")
 
     summary = summarise(responses)
     for policy_name in POLICIES_TO_RUN:
         plot_policy(policy_name, summary)
         print(f"Saved plots for {policy_name} in {OUTPUT_DIR}")
+    plot_comparison(POLICIES_TO_RUN, summary)
 
 
 if __name__ == "__main__":
