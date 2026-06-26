@@ -43,35 +43,16 @@ parameters:
     bounds: [0.20, 0.45]
     distribution: uniform
 
-  # - name: btl_ltv
-  #   path: credit.btl_ltv
-  #   bounds: [0.50, 0.85]
-  #   distribution: uniform
+  - name: btl_funding_rate
+    path: credit.btl_funding_rate
+    bounds: [0.0025, 0.025]
+    distribution: log-uniform
 
-  # - name: inst_ltv
-  #   path: credit.inst_ltv
-  #   bounds: [0.40, 0.75]
-  #   distribution: uniform
+  - name: inst_funding_rate
+    path: credit.inst_funding_rate
+    bounds: [0.0015, 0.015]
+    distribution: log-uniform
 
-  # - name: inst_required_return
-  #   path: agent_init.inst_required_return
-  #   bounds: [0.001, 0.01]
-  #   distribution: log-uniform
-
-  # - name: loss_aversion
-  #   path: agent_init.loss_aversion
-  #   bounds: [1.0, 2.5]      # loss aversion is lambda >= 1 by definition
-  #   distribution: uniform
-
-  # - name: risk_aversion_mu
-  #   path: agent_init.risk_aversion_mu
-  #   bounds: [-2.0, 0.0]     # log-mean of household risk aversion gamma
-  #   distribution: uniform
-
-  # - name: smoothing
-  #   path: expectations.smoothing
-  #   bounds: [0.5, 0.98]     # EWMA persistence of expectations
-  #   distribution: uniform
 
 
 responses:
