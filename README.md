@@ -1,4 +1,6 @@
-# An Agent-Based Model to Identify the Marginal-Pricer
+# Who Sets the Price? A Structural Agent-Based Model of Housing Markets
+
+Tim de Groot, Tristan Farran, George Petropoulos, and Matteo Postiferi
 
 ## Overview
 
@@ -20,12 +22,21 @@ uv run run.py
 
 ## Policies
 
-Policies are the design framework used for experiments on our model. These policies are defined in the `code/policies.py` file where their effects and parameters can be changed.
+Policies are the design framework used for experiments on our model. These policies are defined in `code/policies.py` where their effects and parameters can be changed.
 
 Experiments can be run using:
 
 ```bash
 uv run code/run.py --experiment [policy]
+```
+
+```bash
+uv run run.py --experiment rate-up         # mortgage/funding rate increase
+uv run run.py --experiment rate-down
+uv run run.py --experiment ltv-tighten      # lower LTV caps
+uv run run.py --experiment ltv-loosen
+uv run run.py --experiment tightening       # combined rate up + LTV/DTI tighten
+uv run run.py --experiment rate-up --shock-step 120
 ```
 
 ## Policy Analysis
@@ -54,17 +65,4 @@ The analysis is configured in `sensitivity/config.yaml` — choose which paramet
 
 ```bash
 uv run python sensitivity/analysis.py   # → results/sensitivity/global_sa.png
-```
-
-## Experiments
-
-Designed experiments apply a scheduled credit shock through the policy layer. Defined in `code/policies.py`:
-
-```bash
-uv run run.py --experiment rate-up         # mortgage/funding rate increase
-uv run run.py --experiment rate-down
-uv run run.py --experiment ltv-tighten      # lower LTV caps
-uv run run.py --experiment ltv-loosen
-uv run run.py --experiment tightening       # combined rate up + LTV/DTI tighten
-uv run run.py --experiment rate-up --shock-step 120
 ```
