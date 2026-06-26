@@ -1,12 +1,6 @@
 import unittest
-from pathlib import Path
-import sys
 
 import numpy as np
-
-_ = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "code"))
 
 from code.core.expectations import (
     adaptive_update,

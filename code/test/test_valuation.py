@@ -1,10 +1,4 @@
 import unittest
-from pathlib import Path
-import sys
-
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_ROOT))
-sys.path.insert(0, str(_ROOT / "code"))
 
 from code.core.valuation import (
     housing_consumption_value,

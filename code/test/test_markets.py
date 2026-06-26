@@ -1,8 +1,4 @@
 import unittest
-from pathlib import Path
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from code.core.markets import OwnershipMarket, RentalMarket, Transaction, RentalTransaction
 

@@ -1,14 +1,8 @@
 """Full-model regression tests: invariants and regression bugs."""
 
 import unittest
-from pathlib import Path
-import sys
 
 import numpy as np
-
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_ROOT))
-sys.path.insert(0, str(_ROOT / "code"))
 
 from code.settings.config import Config
 from code.core.model import HousingModel

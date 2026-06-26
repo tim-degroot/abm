@@ -7,7 +7,6 @@ Usage
 """
 
 import os
-import sys as _sys
 
 import numpy as np
 import pandas as pd
@@ -15,11 +14,6 @@ import matplotlib.pyplot as plt
 import yaml
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_CODE_DIR = os.path.join(_PROJECT_ROOT, "code")
-for _p in (_PROJECT_ROOT, _CODE_DIR):
-    if _p not in _sys.path:
-        _sys.path.insert(0, _p)
-
 _CONFIG_PATH = os.path.join(_PROJECT_ROOT, "settings", "sensitivity_config.yaml")
 _INDICES_PATH = os.path.join(_PROJECT_ROOT, "results", "sensitivity", "sobol_indices.csv")
 _OUT_PATH = os.path.join(_PROJECT_ROOT, "results", "sensitivity", "global_sa.png")

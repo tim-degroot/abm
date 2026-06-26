@@ -17,11 +17,6 @@ from SALib.sample import sobol as sobol_sample
 from SALib.analyze import sobol as sobol_analyze
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_CODE_DIR = os.path.join(_PROJECT_ROOT, "code")
-for _p in (_PROJECT_ROOT, _CODE_DIR):
-    if _p not in _sys.path:
-        _sys.path.insert(0, _p)
-
 _CONFIG_PATH = os.path.join(_PROJECT_ROOT, "settings", "sensitivity_config.yaml")
 
 
@@ -89,8 +84,24 @@ def compute_responses(df, sa_cfg):
     results = {}
     for r in sa_cfg["responses"]:
         name = r["name"]
-        if r.get("custom"):
-            raise ValueError(f"Unknown custom response: {name}")
+        custom = r.get("custom")
+        if custom:
+            if custom == "returns_std":
+                series = df[r["metric"]].dropna()
+                if len(series) < 2:
+                    results[name] = np.nan
+                else:
+                    log_returns = np.log(
+                        series.iloc[1:].values / series.iloc[:-1].values
+                    )
+                    log_returns = log_returns[np.isfinite(log_returns)]
+                    results[name] = (
+                        float(np.std(log_returns, ddof=1))
+                        if len(log_returns) > 0
+                        else np.nan
+                    )
+            else:
+                raise ValueError(f"Unknown custom response: {custom}")
         else:
             series = df[r["metric"]]
             tail = r.get("tail")
