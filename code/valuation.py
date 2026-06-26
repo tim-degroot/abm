@@ -38,13 +38,16 @@ def _dcf_price(
     Maximum price implied by a time-bounded DCF.
 
         P = b0 * annuity_factor(r, g, T) + price_anchor * ((1+g)/(1+r))^T
-    """
-    valuation = 0
-    for t in range(horizon):
-        valuation += benefit_flow * ((1 + benefit_growth) ** t) / ((1 + discount_rate) ** t)
-    valuation += price_anchor * ((1 + price_growth) ** horizon) / ((1 + discount_rate) ** horizon)
 
-    return valuation
+    Uses the geometric-series closed form instead of a loop over horizon.
+    """
+    d = (1.0 + benefit_growth) / (1.0 + discount_rate)
+    if abs(d - 1.0) < 1e-12:
+        annuity = benefit_flow * horizon
+    else:
+        annuity = benefit_flow * (1.0 - d ** horizon) / (1.0 - d)
+    terminal = price_anchor * ((1.0 + price_growth) / (1.0 + discount_rate)) ** horizon
+    return annuity + terminal
 
 
 def household_buy_wtp(
