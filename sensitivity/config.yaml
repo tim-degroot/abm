@@ -14,7 +14,7 @@ stochastic:
                             # Run ``evaluate --model-seed S`` for each S in 0..9.
                             # Not read by the code — it counts the seed_*.csv files.
 
-steps: 600                  # simulation length (set to e.g. 24 for quick smoke tests)
+steps: 1200                  # simulation length (set to e.g. 24 for quick smoke tests)
 
 
 parameters:

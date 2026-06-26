@@ -27,7 +27,7 @@ class SimConfig(BaseModel):
     n_households: int = Field(500, gt=0)
     n_institutions: int = Field(5, gt=0)
     n_properties: int = Field(625, gt=0)
-    n_steps: int = Field(600, gt=0)
+    n_steps: int = Field(1200, gt=0)
     seed: int = Field(42, ge=0)
 
 
