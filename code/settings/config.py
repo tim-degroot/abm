@@ -1,5 +1,5 @@
 """
-Configuration schema for the housing-market 
+Configuration schema for the housing-market
 
 Sections:
   SimConfig         - run size and seed

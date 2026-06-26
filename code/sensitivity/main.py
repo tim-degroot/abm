@@ -91,14 +91,10 @@ def compute_responses(df, sa_cfg):
                 if len(series) < 2:
                     results[name] = np.nan
                 else:
-                    log_returns = np.log(
-                        series.iloc[1:].values / series.iloc[:-1].values
-                    )
+                    log_returns = np.log(series.iloc[1:].values / series.iloc[:-1].values)
                     log_returns = log_returns[np.isfinite(log_returns)]
                     results[name] = (
-                        float(np.std(log_returns, ddof=1))
-                        if len(log_returns) > 0
-                        else np.nan
+                        float(np.std(log_returns, ddof=1)) if len(log_returns) > 0 else np.nan
                     )
             else:
                 raise ValueError(f"Unknown custom response: {custom}")

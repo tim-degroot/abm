@@ -1,4 +1,4 @@
-"""Entry point for the housing market """
+"""Entry point for the housing market"""
 
 import argparse
 import os
