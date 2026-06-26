@@ -14,10 +14,11 @@ stochastic:
                             # Run ``evaluate --model-seed S`` for each S in 0..9.
                             # Not read by the code — it counts the seed_*.csv files.
 
-steps: 1200                  # simulation length (set to e.g. 24 for quick smoke tests)
+steps: 1200                 # simulation length (set to e.g. 24 for quick smoke tests)
 
 
 parameters:
+  # --- structural / spatial -----------------------------------------------
   - name: n_households
     path: sim.n_households
     bounds: [375, 625]
@@ -28,20 +29,29 @@ parameters:
     bounds: [0, 2]
     distribution: int
 
-  - name: mortgage_rate
-    path: credit.mortgage_rate
-    bounds: [0.001, 0.01]
-    distribution: log-uniform
-
-  - name: ltv_limit
-    path: credit.ltv_limit
-    bounds: [0.60, 0.95]
+  # --- behavioural --------------------------------------------------------
+  - name: risk_aversion_mu
+    path: agent_init.risk_aversion_mu
+    bounds: [-2.0, 0.0]
     distribution: uniform
 
+  - name: loss_aversion
+    path: agent_init.loss_aversion
+    bounds: [1.0, 2.5]
+    distribution: uniform
+
+  # --- DTI (common to OO + LL) --------------------------------------------
   - name: dti_limit
     path: credit.dti_limit
     bounds: [0.20, 0.45]
     distribution: uniform
+
+  # ===== Funding-rate channel (cost of credit by agent type) =============
+  # Swap these 3 vs the LTV group below to compare channels.
+  - name: mortgage_rate
+    path: credit.mortgage_rate
+    bounds: [0.001, 0.01]
+    distribution: log-uniform
 
   - name: btl_funding_rate
     path: credit.btl_funding_rate
@@ -53,6 +63,22 @@ parameters:
     bounds: [0.0015, 0.015]
     distribution: log-uniform
 
+  # ===== LTV channel (leverage by agent type) ============================
+  # Swap these 3 vs the funding-rate group above to compare channels.
+  - name: ltv_limit
+    path: credit.ltv_limit
+    bounds: [0.60, 0.95]
+    distribution: uniform
+
+  - name: btl_ltv
+    path: credit.btl_ltv
+    bounds: [0.50, 0.85]
+    distribution: uniform
+
+  - name: inst_ltv
+    path: credit.inst_ltv
+    bounds: [0.40, 0.75]
+    distribution: uniform
 
 
 responses:
@@ -63,34 +89,33 @@ responses:
 
   - name: price_volatility
     metric: avg_sale_price
-    reduce: nanstd
-    description: "Std dev of sale price (full run)"
+    custom: returns_std
+    description: "Std dev of monthly log returns"
 
-  - name: inst_share_final
+  - name: oo_ownership_share
+    metric: owner_occupier_ownership_share
+    reduce: nanmean
+    description: "Mean owner-occupier ownership share"
+
+  - name: ll_ownership_share
+    metric: landlord_ownership_share
+    reduce: nanmean
+    description: "Mean landlord ownership share"
+
+  - name: inst_ownership_share
     metric: institutional_ownership_share
-    reduce: last
-    description: "Institutional ownership share at final step"
-
-  - name: oo_share
-    metric: owner_occupier_share
     reduce: nanmean
-    description: "Mean owner-occupier share of winning bids"
+    description: "Mean institutional ownership share"
 
-  - name: landlord_share
-    metric: landlord_share
+  - name: total_net_worth
+    metric: total_household_net_worth
     reduce: nanmean
-    description: "Mean landlord share of winning bids"
+    description: "Mean total household net worth"
 
-  - name: inst_share
-    metric: institution_share
+  - name: net_worth_gini
+    metric: household_net_worth_gini
     reduce: nanmean
-    description: "Mean institutional share of winning bids"
-
-  - name: vacancy
-    metric: vacancy_rate
-    reduce: nanmean
-    description: "Mean vacancy rate"
-
+    description: "Mean Gini coefficient of household net worth"
 
 
 parallel:
