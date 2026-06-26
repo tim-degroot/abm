@@ -1,68 +1,64 @@
-# Housing Market Agent-Based Model
+# An Agent-Based Model to Identify the Marginal-Pricer
 
-Project for Agent-Based Modelling (5284AGBM6Y)
+## Overview
+
+Agent-based model of the UK housing market that aims to investigate the role of three different types of owners: owner-occupiers, private landlords, and institutions. How do credit conditions shape market structure (who buys) and stability (price volatility)?
+
+## Repository structure
+
+## Requirements
+
+- **Python:** 3.13+
+- **Package Manager:** [uv](https://docs.astral.sh/uv/)
+- **Dependencies:** Managed via pyproject.toml (includes MESA)
 
 ## Quickstart Guide
 ```bash
 git clone https://github.com/tim-degroot/abm.git
 uv run run.py
 ```
-## Requirements & Usage
 
-- **Python:** 3.13+
-- **Package Manager:** [uv](https://docs.astral.sh/uv/)
-- **Dependencies:** Managed via pyproject.toml (includes MESA)
+## Policies
+
+Policies are the design framework used for experiments on our model. These policies are defined in the `code/policies.py` file where their effects and parameters can be changed.
+
+Experiments can be run using:
+
+```bash
+uv run code/run.py --experiment [policy]
+```
+
+## Policy Analysis
+
+The Policy Analysis wrapper is designed to run multiple seeds of experiments in a parallel way and generate visualizations based on these results.
+
+Upon reviewing the configuration within the `code/policy_analysis.py` file this analysis can be run using the following command:
+
+```bash
+uv run code/policy_analysis.py
+```
+
+This produces `responses.csv` with all results and a response figure per experiment in `results/credit_shocks/`.
 
 ## Sensitivity Analysis (Sobol)
 
-Sobol global sensitivity analysis with stochastic replicates. Each parameter set is evaluated across multiple model seeds to separate parametric sensitivity from stochastic noise.
-
-### Stage 1: Generate the Saltelli sample (once)
-```bash
-uv run python sensitivity/main.py --generate --N 512
-```
-Creates `results/sensitivity/sobol_samples.csv` with N × (2k+2) rows. With k=9 parameters and N=512: 10,240 parameter sets.
-
-### Stage 2: Evaluate — one invocation per device
-Each device runs the full parameter set with a different model seed. Distributing seeds (not parameter chunks) keeps devices self-contained, with no coordination needed.
+Three-stage Sobol global sensitivity analysis with stochastic replicates:
 
 ```bash
-Device 1:  uv run python sensitivity/main.py --evaluate --model-seed 0
-Device 2:  uv run python sensitivity/main.py --evaluate --model-seed 1
-...
-Device 10: uv run python sensitivity/main.py --evaluate --model-seed 9
+uv run python sensitivity/main.py --generate      # stage 1: Saltelli samples (once)
+uv run python sensitivity/main.py --evaluate --model-seed 0  # stage 2: per seed
+uv run python sensitivity/main.py --aggregate     # stage 3: Sobol indices from all seeds
 ```
 
-Each device writes `results/sensitivity/seed_{S}.csv`. Copy these back to a central machine for aggregation.
+The analysis is configured in `sensitivity/config.yaml` — choose which parameters to vary, their bounds, and which response metrics to use. After aggregation, the 2×2 grid of first-order vs total-order indices can be plotted:
 
-### Stage 3: Aggregate (once)
 ```bash
-uv run python sensitivity/main.py --aggregate
+uv run python sensitivity/analysis.py   # → results/sensitivity/global_sa.png
 ```
 
-Averages responses across seeds per parameter set, then computes Sobol first-order (S1) and total-order (ST) indices with confidence intervals.
+## Experiments
 
-| Output file | Contents |
-|---|---|
-| `results/sensitivity/responses_avg.csv` | Seed-averaged responses (10,240 rows) |
-| `results/sensitivity/sobol_indices.csv` | Sobol S1, S1_conf, ST, ST_conf per parameter × response |
-| `results/sensitivity/sobol_indices.png` | Grouped bar chart |
-
-### Smoke test (N=4, quick check)
-```bash
-uv run python sensitivity/main.py --generate --N 4
-uv run python sensitivity/main.py --evaluate --model-seed 0 --n-cores 4
-uv run python sensitivity/main.py --evaluate --model-seed 1 --n-cores 4
-uv run python sensitivity/main.py --aggregate
-```
-
-### Experiments (future)
-Add `--experiment <name>` to evaluate and aggregate stages to run the SA under a policy shock instead of the baseline. Response files are written to a subdirectory (e.g. `results/sensitivity/tightening/`).
-
-## Designed credit-shock experiments
-
-The baseline holds credit conditions fixed. Designed experiments apply a scheduled
-credit shock through the policy layer:
+Designed experiments apply a scheduled credit shock through the policy layer. Defined in `code/policies.py`:
 
 ```bash
 uv run run.py --experiment rate-up         # mortgage/funding rate increase
