@@ -6,7 +6,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "code"))
 
-from code.credit import CreditEnvironment
+from abm.code.core.credit import CreditEnvironment
 
 
 class TestOriginationLTV(unittest.TestCase):

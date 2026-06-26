@@ -45,7 +45,7 @@ def _dcf_price(
     if abs(d - 1.0) < 1e-12:
         annuity = benefit_flow * horizon
     else:
-        annuity = benefit_flow * (1.0 - d ** horizon) / (1.0 - d)
+        annuity = benefit_flow * (1.0 - d**horizon) / (1.0 - d)
     terminal = price_anchor * ((1.0 + price_growth) / (1.0 + discount_rate)) ** horizon
     return annuity + terminal
 
@@ -53,7 +53,7 @@ def _dcf_price(
 def household_buy_wtp(
     quality: float,
     quality_value_scale: float,
-    base_housing_value: float, # for quality
+    base_housing_value: float,  # for quality
     mortgage_rate: float,
     risk_adjusted_price_growth: float,
     price_anchor: float,
@@ -67,12 +67,13 @@ def household_buy_wtp(
     p_max = _dcf_price(
         benefit_flow=benefit,
         discount_rate=mortgage_rate,
-        benefit_growth=0.0, # no qual growth for consumption benefit
+        benefit_growth=0.0,  # no qual growth for consumption benefit
         price_growth=risk_adjusted_price_growth,
         price_anchor=price_anchor,
         horizon=horizon,
-    )    
+    )
     return max(0.0, min(p_max, credit_ceiling))
+
 
 def household_btl_wtp(
     quality: float,
@@ -96,7 +97,7 @@ def household_btl_wtp(
         price_growth=risk_adjusted_price_growth,
         price_anchor=price_anchor,
         horizon=horizon,
-    )    
+    )
 
     return max(0.0, min(p_max, credit_ceiling))
 
@@ -132,7 +133,6 @@ def institutional_wtp(
     return max(0.0, min(p_max, credit_ceiling))
 
 
-
 def household_rent_wtp(
     quality: float,
     quality_value_scale: float,
@@ -146,7 +146,9 @@ def household_rent_wtp(
     if income <= 0.0:
         return 0.0
     benefit = housing_consumption_value(quality, quality_value_scale, base_housing_value)
-    ceiling = (income / 12.0) * dti_limit # used as an equivalent affordability ceiling, not literally a DTI limit
+    ceiling = (
+        income / 12.0
+    ) * dti_limit  # used as an equivalent affordability ceiling, not literally a DTI limit
     return max(0.0, min(benefit, ceiling))
 
 

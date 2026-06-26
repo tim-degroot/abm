@@ -3,7 +3,7 @@ The credit environment.
 """
 
 from __future__ import annotations
-from config import CreditConfig
+from abm.code.settings.config import CreditConfig
 
 
 class CreditEnvironment:

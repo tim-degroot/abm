@@ -1,13 +1,11 @@
 """
 Designed credit-shock experiments, applied through the policy layer.
-
 Usage:
     model = HousingModel(config=cfg, policy=RateIncrease(step=240))
 """
 
 from __future__ import annotations
-
-from credit import CreditEnvironment
+from abm.code.core.credit import CreditEnvironment
 
 
 class NoPolicy:
@@ -55,13 +53,13 @@ def RateIncrease(step=240, rate=0.08 / 12):
     """Gamal interest-rate rise: 3.7% to 8% annually."""
     return _ScheduledCreditShock(
         step,
-        {"mortgage_rate": rate,
-         "btl_funding_rate": rate,
-         "inst_funding_rate": rate},
+        {"mortgage_rate": rate, "btl_funding_rate": rate, "inst_funding_rate": rate},
         label="rate 3.7% -> 8% annually",
-        initial={"mortgage_rate": 0.037 / 12,
-                 "btl_funding_rate": 0.037 / 12,
-                 "inst_funding_rate": 0.037 / 12},
+        initial={
+            "mortgage_rate": 0.037 / 12,
+            "btl_funding_rate": 0.037 / 12,
+            "inst_funding_rate": 0.037 / 12,
+        },
     )
 
 
@@ -69,20 +67,21 @@ def RateDecrease(step=240, rate=0.037 / 12):
     """Gamal interest-rate decline: 8% to 3.7% annually."""
     return _ScheduledCreditShock(
         step,
-        {"mortgage_rate": rate,
-         "btl_funding_rate": rate,
-         "inst_funding_rate": rate},
+        {"mortgage_rate": rate, "btl_funding_rate": rate, "inst_funding_rate": rate},
         label="rate 8% -> 3.7% annually",
-        initial={"mortgage_rate": 0.08 / 12,
-                 "btl_funding_rate": 0.08 / 12,
-                 "inst_funding_rate": 0.08 / 12},
+        initial={
+            "mortgage_rate": 0.08 / 12,
+            "btl_funding_rate": 0.08 / 12,
+            "inst_funding_rate": 0.08 / 12,
+        },
     )
 
 
 def LTVTighten(step=240, ltv=0.69, btl_ltv=0.69, inst_ltv=0.69):
     """Gamal LTV decline: 90% to 69%."""
     return _ScheduledCreditShock(
-        step, {"ltv_limit": ltv, "btl_ltv": btl_ltv, "inst_ltv": inst_ltv},
+        step,
+        {"ltv_limit": ltv, "btl_ltv": btl_ltv, "inst_ltv": inst_ltv},
         label="LTV 90% -> 69%",
         initial={"ltv_limit": 0.90, "btl_ltv": 0.90, "inst_ltv": 0.90},
     )
@@ -91,7 +90,8 @@ def LTVTighten(step=240, ltv=0.69, btl_ltv=0.69, inst_ltv=0.69):
 def LTVLoosen(step=240, ltv=0.74, btl_ltv=0.74, inst_ltv=0.74):
     """Gamal LTV rise: 60% to 74%."""
     return _ScheduledCreditShock(
-        step, {"ltv_limit": ltv, "btl_ltv": btl_ltv, "inst_ltv": inst_ltv},
+        step,
+        {"ltv_limit": ltv, "btl_ltv": btl_ltv, "inst_ltv": inst_ltv},
         label="LTV 60% -> 74%",
         initial={"ltv_limit": 0.60, "btl_ltv": 0.60, "inst_ltv": 0.60},
     )
@@ -101,9 +101,15 @@ def CreditTightening(step=240):
     """Combined tightening: higher rate, lower LTV, lower DTI."""
     return _ScheduledCreditShock(
         step,
-        {"mortgage_rate": 0.006667, "ltv_limit": 0.80, "dti_limit": 0.30,
-         "btl_funding_rate": 0.0075, "inst_funding_rate": 0.0065,
-         "btl_ltv": 0.65, "inst_ltv": 0.50},
+        {
+            "mortgage_rate": 0.006667,
+            "ltv_limit": 0.80,
+            "dti_limit": 0.30,
+            "btl_funding_rate": 0.0075,
+            "inst_funding_rate": 0.0065,
+            "btl_ltv": 0.65,
+            "inst_ltv": 0.50,
+        },
         label="combined tightening",
     )
 
@@ -122,6 +128,12 @@ EXPERIMENTS = {
 
 
 __all__ = [
-    "NoPolicy", "RateIncrease", "RateDecrease", "LTVTighten", "LTVLoosen",
-    "CreditTightening", "CreditShockPolicy", "EXPERIMENTS",
+    "NoPolicy",
+    "RateIncrease",
+    "RateDecrease",
+    "LTVTighten",
+    "LTVLoosen",
+    "CreditTightening",
+    "CreditShockPolicy",
+    "EXPERIMENTS",
 ]

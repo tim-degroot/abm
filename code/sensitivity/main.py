@@ -1,12 +1,5 @@
-"""Sobol global sensitivity analysis with stochastic replicates.
-
-Usage
------
-    uv run python sensitivity/main.py --generate --N 512
-    uv run python sensitivity/main.py --evaluate --model-seed 0
-    uv run python sensitivity/main.py --aggregate
-
-See README.md for the full workflow.
+"""
+Sobol global sensitivity analysis with stochastic replicates.
 """
 
 import glob
@@ -23,14 +16,13 @@ from tqdm import tqdm
 from SALib.sample import sobol as sobol_sample
 from SALib.analyze import sobol as sobol_analyze
 
-
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CODE_DIR = os.path.join(_PROJECT_ROOT, "code")
 for _p in (_PROJECT_ROOT, _CODE_DIR):
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
 
-_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "sensitivity", "config.yaml")
+_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "settings", "sensitivity_config.yaml")
 
 
 def load_config():
@@ -59,9 +51,7 @@ def map_params(param_values, sa_cfg):
             if dist == "uniform":
                 mapped[p["name"]] = low + x * (high - low)
             elif dist == "log-uniform":
-                mapped[p["name"]] = np.exp(
-                    np.log(low) + x * (np.log(high) - np.log(low))
-                )
+                mapped[p["name"]] = np.exp(np.log(low) + x * (np.log(high) - np.log(low)))
             elif dist == "int":
                 mapped[p["name"]] = int(round(low + x * (high - low)))
             else:
@@ -72,7 +62,7 @@ def map_params(param_values, sa_cfg):
 
 def build_config(params, sa_cfg, seed=None):
     """Build a Config with overridden parameter values and optional seed."""
-    from code.config import Config
+    from abm.code.settings.config import Config
 
     cfg = Config()
     section_overrides = {}
@@ -109,20 +99,14 @@ def compute_responses(df, sa_cfg):
             reduce = r.get("reduce", "nanmean")
             if reduce == "nanmean":
                 results[name] = (
-                    float(series.mean(skipna=True))
-                    if not series.isna().all()
-                    else np.nan
+                    float(series.mean(skipna=True)) if not series.isna().all() else np.nan
                 )
             elif reduce == "nanstd":
                 results[name] = (
-                    float(series.std(skipna=True))
-                    if not series.isna().all()
-                    else np.nan
+                    float(series.std(skipna=True)) if not series.isna().all() else np.nan
                 )
             elif reduce == "last":
-                results[name] = (
-                    float(series.iloc[-1]) if not series.empty else np.nan
-                )
+                results[name] = float(series.iloc[-1]) if not series.empty else np.nan
             else:
                 raise ValueError(f"Unknown reduce: {reduce}")
     return results
@@ -131,7 +115,7 @@ def compute_responses(df, sa_cfg):
 def run_single(args):
     """Run one model instance and return sample_id + scalar responses."""
     params, model_seed, sa_cfg = args
-    from code.model import HousingModel
+    from abm.code.core.model import HousingModel
 
     sample_id = params.get("sample_id", -1)
     try:
@@ -208,8 +192,9 @@ def cmd_evaluate(args):
     sample_rows = samples_df.to_dict("records")
     k = len(sa_cfg["parameters"])
 
-    print(f"Evaluating {len(sample_rows)} samples with model_seed={model_seed} "
-          f"on {n_cores} cores")
+    print(
+        f"Evaluating {len(sample_rows)} samples with model_seed={model_seed} " f"on {n_cores} cores"
+    )
 
     ctx = get_context("fork")
     with ctx.Pool(n_cores) as pool:
@@ -269,14 +254,16 @@ def _compute_sobol_indices(problem, response_name, Y, sa_cfg):
         Si = sobol_analyze.analyze(problem, Y, print_to_console=False)
         rows = []
         for i, p in enumerate(sa_cfg["parameters"]):
-            rows.append({
-                "response": response_name,
-                "parameter": p["name"],
-                "S1": Si["S1"][i],
-                "S1_conf": Si["S1_conf"][i],
-                "ST": Si["ST"][i],
-                "ST_conf": Si["ST_conf"][i],
-            })
+            rows.append(
+                {
+                    "response": response_name,
+                    "parameter": p["name"],
+                    "S1": Si["S1"][i],
+                    "S1_conf": Si["S1_conf"][i],
+                    "ST": Si["ST"][i],
+                    "ST_conf": Si["ST_conf"][i],
+                }
+            )
         return rows
     except Exception as e:
         print(f"  Error analyzing '{response_name}': {e}")
@@ -308,9 +295,7 @@ def plot_sobol(sobol_df, sa_cfg, out_dir):
         st_c = sub["ST_conf"].values
 
         ax.bar(x - width / 2, s1, width, yerr=s1_c, label="1st order", capsize=3)
-        ax.bar(
-            x + width / 2, st, width, yerr=st_c, label="Total order", capsize=3
-        )
+        ax.bar(x + width / 2, st, width, yerr=st_c, label="Total order", capsize=3)
         ax.axhline(0, color="grey", linewidth=0.5)
         ax.set_xticks(x)
         ax.set_xticklabels(param_names, rotation=30, ha="right")
@@ -366,18 +351,23 @@ def cmd_aggregate(args):
 
 def _parse_args(argv=None):
     import argparse
+
     p = argparse.ArgumentParser(
         description="Sobol sensitivity analysis with stochastic replicates."
     )
     p.add_argument("--generate", action="store_true", help="Generate Saltelli samples")
     p.add_argument("--N", type=int, default=None, help="Base sample size (overrides config)")
-    p.add_argument("--sobol-seed", type=int, default=None, help="Saltelli RNG seed (overrides config)")
+    p.add_argument(
+        "--sobol-seed", type=int, default=None, help="Saltelli RNG seed (overrides config)"
+    )
 
     p.add_argument("--evaluate", action="store_true", help="Run model evaluations for one seed")
     p.add_argument("--model-seed", type=int, default=None, help="Model RNG seed for this replicate")
     p.add_argument("--cores", type=int, default=None, help="Worker count (overrides config)")
 
-    p.add_argument("--aggregate", action="store_true", help="Aggregate seeds and compute Sobol indices")
+    p.add_argument(
+        "--aggregate", action="store_true", help="Aggregate seeds and compute Sobol indices"
+    )
     return p.parse_args(argv)
 
 

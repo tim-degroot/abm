@@ -2,17 +2,7 @@
 Paired credit-shock analysis wrapper.
 
 Runs the housing ABM under a credit-shock policy and its matched baseline across
-N_RUNS stochastic replicates, then saves one response figure per policy to
-results/credit_shocks/.
-
-Run from the repo root:
-    uv run code/policy_analysis.py
-
-or if project environment already active:
-    python code/policy_analysis.py
-
-Configure the run by editing the configuration block below: choose the policies (POLICIES_TO_RUN), number of
-stochastic replications (N_RUNS), shock month (SHOCK_STEP), plotting horizon, etc.
+N_RUNS replicates, then saves one response figure per policy to results/credit_shocks/.
 """
 
 import argparse
@@ -24,13 +14,13 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from config import Config
-from model import HousingModel
-from policies import EXPERIMENTS, NoPolicy
+from abm.code.settings.config import Config
+from abm.code.core.model import HousingModel
+from abm.code.settings.policies import EXPERIMENTS, NoPolicy
 
 plt.switch_backend("Agg")  # for headless servers
 
-# Configuration 
+# Configuration
 
 N_RUNS = 20
 SHOCK_STEP = 240
@@ -64,32 +54,31 @@ SHARES = {
 
 # Simulation
 
+
 def rolling_metrics(data):
     """Trailing 12-month price, rent, and winning-bidder shares."""
 
     volume = data["transaction_volume"].fillna(0.0)
-    
+
     rolling_volume = volume.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum()
-    
+
     rolling_volume = rolling_volume.where(rolling_volume > 0)
 
     result = pd.DataFrame({"month": data["month"]})
 
     transaction_value = data["avg_sale_price"].fillna(0.0) * volume
-    
-    result["sale_price"] = transaction_value.rolling(
-        ROLLING_WINDOW, min_periods=ROLLING_WINDOW
-    ).sum() / rolling_volume
 
-    result["rent"] = data["avg_rent"].rolling(
-        ROLLING_WINDOW, min_periods=ROLLING_WINDOW
-    ).mean()
+    result["sale_price"] = (
+        transaction_value.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum() / rolling_volume
+    )
+
+    result["rent"] = data["avg_rent"].rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).mean()
 
     for source, target in SHARES.items():
         winner_count = data[source].fillna(0.0) * volume
-        result[target] = winner_count.rolling(
-            ROLLING_WINDOW, min_periods=ROLLING_WINDOW
-        ).sum() / rolling_volume
+        result[target] = (
+            winner_count.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum() / rolling_volume
+        )
 
     return result
 
@@ -130,22 +119,14 @@ def run_policy_seed(args):
     )
 
     for metric in ("sale_price", "rent"):
-        response[metric] = 100 * (
-            paired[f"{metric}_shock"] / paired[f"{metric}_base"] - 1
-        )
+        response[metric] = 100 * (paired[f"{metric}_shock"] / paired[f"{metric}_base"] - 1)
     for metric in ("owner_occupier", "private_landlord", "institution"):
-        response[metric] = 100 * (
-            paired[f"{metric}_shock"] - paired[f"{metric}_base"]
-        )
+        response[metric] = 100 * (paired[f"{metric}_shock"] - paired[f"{metric}_base"])
 
-    return response[
-        response["event_month"].between(
-            -PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS
-        )
-    ]
+    return response[response["event_month"].between(-PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS)]
 
 
-# Summary and plotting 
+# Summary and plotting
 
 
 def summarise(responses):
@@ -255,8 +236,9 @@ def plot_comparison(policy_names, summary):
 
 def main():
     parser = argparse.ArgumentParser(description="Paired credit-shock analysis.")
-    parser.add_argument("--replot", action="store_true",
-                        help="Skip model runs; re-plot from existing responses.csv")
+    parser.add_argument(
+        "--replot", action="store_true", help="Skip model runs; re-plot from existing responses.csv"
+    )
     args = parser.parse_args()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -269,7 +251,9 @@ def main():
         print(f"Loaded {len(responses)} rows from {csv_path}")
     else:
         items = [(s, p) for s in range(1, N_RUNS + 1) for p in POLICIES_TO_RUN]
-        print(f"Running {len(items)} items ({N_RUNS} seeds \u00d7 {len(POLICIES_TO_RUN)} policies) on {min(WORKERS, len(items))} workers")
+        print(
+            f"Running {len(items)} items ({N_RUNS} seeds \u00d7 {len(POLICIES_TO_RUN)} policies) on {min(WORKERS, len(items))} workers"
+        )
         with ProcessPoolExecutor(max_workers=min(WORKERS, len(items))) as executor:
             futures = {executor.submit(run_policy_seed, item): item for item in items}
             results = []

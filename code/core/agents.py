@@ -5,8 +5,8 @@ Agent definitions: households and institutional investors.
 from __future__ import annotations
 
 import mesa
-import valuation as val
-from utility import risk_adjusted_growth, logit_choice, logit_probabilities
+import abm.code.core.valuation as val
+from abm.code.core.utility import risk_adjusted_growth, logit_choice, logit_probabilities
 
 # ---------------------------------------------------------------------------
 # Mixin: shared balance-sheet mechanics

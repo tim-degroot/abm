@@ -1,7 +1,7 @@
 """
-    Utility: turn expected payoffs into action values and logit choices.
-    Linear utility with risk-adjusted payoff. Risk aversion is implemented
-    via a loading on volatility of expected returns, g -> g - gamma * sigma.
+Utility: turn expected payoffs into action values and logit choices.
+Linear utility with risk-adjusted payoff. Risk aversion is implemented
+via a loading on volatility of expected returns, g -> g - gamma * sigma.
 """
 
 from __future__ import annotations

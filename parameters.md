@@ -66,7 +66,6 @@ Parameters with no external source. Labelled "Author assumption" following the c
 | Risk aversion params          | `agent_init.risk_aversion_mu/sigma`      | μ=1.0, σ=0.5          | Lognormal distribution of household risk aversion.                                                                      |
 | Institutional cash            | `agent_init.inst_cash_low/high`          | [15M, 100M]           | Set so 5 institutions can absorb 350 properties at 40% deposit (~5.6M/inst at 1000 HH scale). Scales with n_properties. |
 | Institutional required return | `agent_init.inst_required_return`        | 0.0015 (≈1.8% annual) | Minimum monthly return on BTL properties.                                                                               |
-| Institutional min yield       | `agent_init.inst_min_yield`              | 0.04 (4% annual)      | Threshold below which institutions sell.                                                                                |
 | Loss aversion                 | `agent_init.loss_aversion`               | 1.30                  | Kahneman & Tversky (1979) endowment effect parameter.                                                                   |
 
 ### Credit (BTL & institution)

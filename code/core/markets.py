@@ -16,7 +16,7 @@ class Transaction:
     price: float
     winning_bid: float
     buyer_type: str
-    purpose: str = "buy"
+    purpose: str
 
 
 @dataclass
@@ -47,12 +47,18 @@ class OwnershipMarket:
         if property_id not in self._listings or amount <= 0:
             return
         self._listings[property_id]["bids"].append(
-            {"bidder_id": bidder_id, "amount": amount, "bidder_type": bidder_type, "purpose": purpose}
+            {
+                "bidder_id": bidder_id,
+                "amount": amount,
+                "bidder_type": bidder_type,
+                "purpose": purpose,
+            }
         )
 
     def resolve(self) -> list[Transaction]:
         transactions = []
         for pid, listing in self._listings.items():
+            # process them in order
             reservation = listing["reservation"]
             bids = listing["bids"]
             if not bids:
@@ -66,9 +72,14 @@ class OwnershipMarket:
             price = min(price, top["amount"])  # Vickrey: never above the winning bid
             transactions.append(
                 Transaction(
-                    step=self.step, property_id=pid, buyer_id=top["bidder_id"],
-                    seller_id=listing["owner_id"], price=price, winning_bid=top["amount"],
-                    buyer_type=top["bidder_type"], purpose=top.get("purpose", "buy"),
+                    step=self.step,
+                    property_id=pid,
+                    buyer_id=top["bidder_id"],
+                    seller_id=listing["owner_id"],
+                    price=price,
+                    winning_bid=top["amount"],
+                    buyer_type=top["bidder_type"],
+                    purpose=top.get("purpose", "buy"),
                 )
             )
         return transactions
@@ -90,17 +101,9 @@ class RentalMarket:
         self._listings[property_id]["bids"].append({"bidder_id": bidder_id, "amount": amount})
 
     def resolve(self) -> list[RentalTransaction]:
-        # Process the most-contested listings first; a tenant who wins is removed
-        # from later auctions this round.
-        order = sorted(
-            self._listings.keys(),
-            key=lambda pid: max((b["amount"] for b in self._listings[pid]["bids"]), default=0.0),
-            reverse=True,
-        )
         transactions = []
         assigned: set[int] = set()
-        for pid in order:
-            listing = self._listings[pid]
+        for pid, listing in self._listings.items():
             bids = [b for b in listing["bids"] if b["bidder_id"] not in assigned]
             if not bids:
                 continue
@@ -110,8 +113,11 @@ class RentalMarket:
             rent = min(top["amount"], second)  # second-price, no reservation
             transactions.append(
                 RentalTransaction(
-                    step=self.step, property_id=pid, tenant_id=top["bidder_id"],
-                    landlord_id=listing["owner_id"], monthly_rent=rent,
+                    step=self.step,
+                    property_id=pid,
+                    tenant_id=top["bidder_id"],
+                    landlord_id=listing["owner_id"],
+                    monthly_rent=rent,
                     winning_rent_bid=top["amount"],
                 )
             )

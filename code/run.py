@@ -13,23 +13,28 @@ def _parse_args(argv):
     parser = argparse.ArgumentParser(description="Run the housing market ABM.")
     parser.add_argument("--steps", "-s", type=int, help="Number of simulation steps")
     parser.add_argument(
-        "--experiment", "-e", nargs="?", const="tightening", default=None,
+        "--experiment",
+        "-e",
+        nargs="?",
+        const="tightening",
+        default=None,
         help="Run a designed credit-shock experiment. Optionally name one of: "
-             "rate-up, rate-down, ltv-tighten, ltv-loosen, tightening "
-             "(default: tightening).",
+        "rate-up, rate-down, ltv-tighten, ltv-loosen, tightening "
+        "(default: tightening).",
     )
-    parser.add_argument("--shock-step", type=int, default=None,
-                        help="Step at which the credit shock is applied.")
+    parser.add_argument(
+        "--shock-step", type=int, default=None, help="Step at which the credit shock is applied."
+    )
     parser.add_argument("--zone-metrics", action="store_true", help="Collect per-zone metrics")
     return parser.parse_args(argv)
 
 
 def main():
-    from config import Config
-    from model import HousingModel
-    from policies import EXPERIMENTS, NoPolicy
-    from metrics import collect_zone_metrics
-    from plotting import plot_summary
+    from abm.code.settings.config import Config
+    from abm.code.core.model import HousingModel
+    from abm.code.settings.policies import EXPERIMENTS, NoPolicy
+    from abm.code.settings.metrics import collect_zone_metrics
+    from abm.code.plotting.plot_run import plot_summary
 
     args = _parse_args(sys.argv[1:])
 

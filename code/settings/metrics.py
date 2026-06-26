@@ -3,7 +3,7 @@ Data-collector reporters passed to Mesa's DataCollector.
 """
 
 import numpy as np
-from agents import HouseholdAgent, InstitutionalAgent
+from abm.code.core.agents import HouseholdAgent, InstitutionalAgent
 
 
 def avg_sale_price(model):
@@ -205,9 +205,7 @@ def vacancy_rate(model):
 
 def household_net_worth_gini(model):
     """Gini coefficient of household net worth (wealth-inequality / displacement)."""
-    nws = sorted(
-        max(0.0, a.net_worth) for a in model.agents if isinstance(a, HouseholdAgent)
-    )
+    nws = sorted(max(0.0, a.net_worth) for a in model.agents if isinstance(a, HouseholdAgent))
     n = len(nws)
     total = sum(nws)
     if n == 0 or total <= 0:
@@ -225,9 +223,7 @@ def collect_zone_metrics(model) -> list[dict]:
         if not props:
             continue
         avg_est_val = float(sum(p.estimated_value for p in props) / len(props))
-        ownership_rate_val = float(
-            sum(1 for p in props if p.owner_id is not None) / len(props)
-        )
+        ownership_rate_val = float(sum(1 for p in props if p.owner_id is not None) / len(props))
         owned = [p for p in props if p.owner_id is not None]
         inst_share = (
             float(
@@ -247,9 +243,7 @@ def collect_zone_metrics(model) -> list[dict]:
             if model._property_map[t.property_id].zone == zone
         ]
         txn_vol = len(txns)
-        avg_txn_price = (
-            float(sum(t.price for t in txns) / len(txns)) if txns else float("nan")
-        )
+        avg_txn_price = float(sum(t.price for t in txns) / len(txns)) if txns else float("nan")
         rows.append(
             {
                 "step": int(model.steps),

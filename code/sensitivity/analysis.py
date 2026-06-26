@@ -4,10 +4,6 @@ Global sensitivity analysis figure: 2x2 grid of Sobol indices.
 Usage
 -----
     uv run python sensitivity/analysis.py
-
-Reads results/sensitivity/sobol_indices.csv (produced by
-``--aggregate``) and config.yaml; saves a figure to
-results/sensitivity/global_sa.png.
 """
 
 import os
@@ -18,18 +14,17 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import yaml
 
-
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CODE_DIR = os.path.join(_PROJECT_ROOT, "code")
 for _p in (_PROJECT_ROOT, _CODE_DIR):
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
 
-_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "sensitivity", "config.yaml")
+_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "settings", "sensitivity_config.yaml")
 _INDICES_PATH = os.path.join(_PROJECT_ROOT, "results", "sensitivity", "sobol_indices.csv")
 _OUT_PATH = os.path.join(_PROJECT_ROOT, "results", "sensitivity", "global_sa.png")
 
-# Responses to show in the 2x2 grid (top-left → bottom-right)
+# Responses to show in the 2x2 grid
 RESPONSES = [
     "oo_share",
     "inst_share",

@@ -1,23 +1,17 @@
-"""Main simulation: the HousingModel and its monthly step.
+"""
+Main simulation: the HousingModel and its monthly step.
 
 Step order (single, documented schedule):
   1. policy hook (apply any scheduled credit shock)
   2. income evolution (fixed macro regime)
   3. rent servicing + tenancy ageing + lease expiry
   4. mark-to-market revaluation
-  5. EXPECTATIONS UPDATE  <-- single source of truth (bounded-vision local signals
-     for households, global signals + rolling OLS for institutions)
+  5. update expectations
   6. action selection (logit over expected action values)
   7. ownership auction -> apply
   8. rental auction (losers + renters fall through) -> apply
   9. mortgage servicing
  10. record history + collect metrics
-
-Key design choices:
-  * No stochastic macro transition; the regime is fixed and credit shocks are
-    designed experiments applied via the policy layer.
-  * Origination LTV is the policy/config lever per purpose, never random.
-  * Households see only their own zone neighbourhood (bounded vision).
 """
 
 from __future__ import annotations
@@ -27,14 +21,14 @@ import numpy as np
 from mesa.datacollection import DataCollector
 from mesa.discrete_space import OrthogonalVonNeumannGrid
 
-from config import Config
-from policies import NoPolicy
-from properties import Property
-from credit import CreditEnvironment
-from markets import OwnershipMarket, RentalMarket
-from agents import HouseholdAgent, InstitutionalAgent
-import expectations as exp
-from metrics import MODEL_REPORTERS
+from abm.code.settings.config import Config
+from abm.code.settings.policies import NoPolicy
+from abm.code.core.properties import Property
+from abm.code.core.credit import CreditEnvironment
+from abm.code.core.markets import OwnershipMarket, RentalMarket
+from abm.code.core.agents import HouseholdAgent, InstitutionalAgent
+import abm.code.core.expectations as exp
+from abm.code.settings.metrics import MODEL_REPORTERS
 
 
 class HousingModel(mesa.Model):
@@ -49,10 +43,14 @@ class HousingModel(mesa.Model):
         self.grid_cols = cfg.spatial.grid_cols
         self.n_zones = cfg.spatial.n_zones
 
-        self.house_grid_rows, self.house_grid_cols = self._house_grid_dimensions(cfg.sim.n_properties)
+        self.house_grid_rows, self.house_grid_cols = self._house_grid_dimensions(
+            cfg.sim.n_properties
+        )
         self.grid = OrthogonalVonNeumannGrid(
             (self.house_grid_rows, self.house_grid_cols),
-            torus=True, capacity=1, random=self.random,
+            torus=True,
+            capacity=1,
+            random=self.random,
         )
         self.grid.create_property_layer("house_status", default_value=0, dtype=int)
         self._zone_adjacency = self._build_zone_adjacency(
@@ -86,6 +84,7 @@ class HousingModel(mesa.Model):
     # ------------------------------------------------------------------ spatial
     def _build_zone_adjacency(self, rows, cols, radius):
         """Map each zone to the set of zones within `radius` (toroidal Chebyshev)."""
+
         def zid(r, c):
             return (r % rows) * cols + (c % cols)
 
@@ -131,10 +130,16 @@ class HousingModel(mesa.Model):
         props = []
         for i in range(n_properties):
             anchor = pcfg.init_base_price + pcfg.init_price_quality_sensitivity * float(q_std[i])
-            props.append(Property(
-                id=i, zone=zones[i], quality=float(q_std[i]), owner_id=None,
-                purchase_anchor_price=anchor, estimated_value=anchor,
-            ))
+            props.append(
+                Property(
+                    id=i,
+                    zone=zones[i],
+                    quality=float(q_std[i]),
+                    owner_id=None,
+                    purchase_anchor_price=anchor,
+                    estimated_value=anchor,
+                )
+            )
         cells = sorted(self.grid.all_cells, key=lambda c: c.coordinate)
         for prop, cell in zip(props, cells):
             prop.grid_coord = cell.coordinate
@@ -143,17 +148,23 @@ class HousingModel(mesa.Model):
     def _init_agents(self, n_households, n_institutions):
         acfg = self.config.agent_init
         incomes = self.rng.lognormal(np.log(acfg.income_mean), acfg.income_sigma, n_households)
-        wealth_mult = self.rng.uniform(acfg.wealth_income_mult_low, acfg.wealth_income_mult_high, n_households)
+        wealth_mult = self.rng.uniform(
+            acfg.wealth_income_mult_low, acfg.wealth_income_mult_high, n_households
+        )
         risk_av = self.rng.lognormal(acfg.risk_aversion_mu, acfg.risk_aversion_sigma, n_households)
         for i in range(n_households):
             HouseholdAgent(
-                unique_id=i, model=self, income=float(incomes[i]),
-                cash=float(incomes[i] * wealth_mult[i]), risk_aversion=float(risk_av[i]),
+                unique_id=i,
+                model=self,
+                income=float(incomes[i]),
+                cash=float(incomes[i] * wealth_mult[i]),
+                risk_aversion=float(risk_av[i]),
                 home_zone=int(i % self.n_zones),
             )
         for j in range(n_institutions):
             InstitutionalAgent(
-                unique_id=n_households + j, model=self,
+                unique_id=n_households + j,
+                model=self,
                 cash=float(self.rng.uniform(acfg.inst_cash_low, acfg.inst_cash_high)),
             )
 
@@ -163,7 +174,9 @@ class HousingModel(mesa.Model):
         New mortgages during the run use the policy/config LTV, never this.
         """
         ai = self.config.agent_init
-        return min(self.credit.ltv_limit, float(self.rng.uniform(ai.ltv_dist_low, ai.ltv_dist_high)))
+        return min(
+            self.credit.ltv_limit, float(self.rng.uniform(ai.ltv_dist_low, ai.ltv_dist_high))
+        )
 
     def _assign_initial_property(self, agent, prop, is_home, is_household):
         price = prop.estimated_value
@@ -200,8 +213,6 @@ class HousingModel(mesa.Model):
         for p in available:
             by_zone.setdefault(p.zone, []).append(p)
 
-        # Owner-occupiers: assign a home in the household's own zone where possible,
-        # else any available property, with probability init_ownership_prob.
         for hh in households:
             if self.rng.random() > cfg.property_init.init_ownership_prob:
                 continue
@@ -221,8 +232,6 @@ class HousingModel(mesa.Model):
                 hh.home_zone = prop.zone
 
         # Remaining stock -> all to institutions (no household landlords at init).
-        # Institutions will sell when their required return isn't met, creating
-        # supply for households to buy during the simulation.
         leftover = [p for plist in by_zone.values() for p in plist if p.owner_id is None]
         self.rng.shuffle(leftover)
         for k, prop in enumerate(leftover):
@@ -231,7 +240,9 @@ class HousingModel(mesa.Model):
 
         # House the still-unhoused via an initial rental auction.
         self._run_rental_market(
-            [h for h in households if h.home_property is None], step=0, market_rent=self._mean_rent_or_default()
+            [h for h in households if h.home_property is None],
+            step=0,
+            market_rent=self._mean_rent_or_default(),
         )
         self._verify_accounting()
 
@@ -246,13 +257,17 @@ class HousingModel(mesa.Model):
     def _verify_accounting(self, tol=1.0):
         props_assets = sum(p.estimated_value for p in self.properties if p.owner_id is not None)
         agent_assets = sum(getattr(a, "_housing_asset_value", 0.0) for a in self.agents)
-        assert abs(props_assets - agent_assets) <= max(tol, 1e-6 * props_assets), (
-            f"Housing assets mismatch: properties={props_assets:.2f} agents={agent_assets:.2f}"
-        )
+        assert abs(props_assets - agent_assets) <= max(
+            tol, 1e-6 * props_assets
+        ), f"Housing assets mismatch: properties={props_assets:.2f} agents={agent_assets:.2f}"
 
     def _seed_history(self):
         allocated = [p.purchase_anchor_price for p in self.properties if p.owner_id is not None]
-        self._price_history = [float(np.mean(allocated))] if allocated else [self.config.property_init.init_base_price]
+        self._price_history = (
+            [float(np.mean(allocated))]
+            if allocated
+            else [self.config.property_init.init_base_price]
+        )
         self._rent_history = [self._mean_rent_or_default()]
         self._record_state()
 
@@ -276,10 +291,10 @@ class HousingModel(mesa.Model):
         # 4. mark to market
         self._mark_to_market()
 
-        # Pre-compute candidate indices for action selection
+        # precompute candidate indices for action selection
         self._build_candidate_index()
 
-        # 5. EXPECTATIONS (single source of truth)
+        # 5. update expectations
         self._update_expectations()
 
         # 6. action selection
@@ -288,7 +303,7 @@ class HousingModel(mesa.Model):
             cands = self._purchase_candidates(a, listed_only=False)
             actions[a.unique_id] = a.choose_action(cands, market_rent)
 
-        # distress sales (capped) are added to the sell set
+        # distress sales are added to the sell set
         distress = self._plan_distress_sales(market_rent)
 
         # 7. ownership auction
@@ -300,19 +315,15 @@ class HousingModel(mesa.Model):
         self._apply_ownership_transactions(sale_txns)
 
         # 8. rental auction: every household left without a home this period bids
-        #    (the unhoused, plus anyone evicted/lease-expired or who lost the
-        #    ownership round). Already-housed renters do NOT re-enter just to trade
-        #    up: that churn frees one unit while taking another, displacing the
-        #    unhoused without raising occupancy. Housing the unhoused is the point.
         bought = {t.buyer_id for t in self.this_step_transactions}
         renters = [
-            a for a in self.agents
+            a
+            for a in self.agents
             if isinstance(a, HouseholdAgent)
             and a.unique_id not in bought
             and a.home_property is None
         ]
         self._list_for_rent(actions)
-        # Refresh rental index after _list_for_rent added new listings
         for p in self.properties:
             if p.listed_for_rent and p.occupant_id is None:
                 self._rental_by_zone[p.zone].add(p.id)
@@ -341,56 +352,51 @@ class HousingModel(mesa.Model):
         return mcfg.neutral_mean, mcfg.neutral_sd
 
     # ----------------------------------------------------------- expectations
+    def clamp(self, x):
+        """Clamp a growth rate to the configured cap."""
+        gcap = self.config.expectations.growth_rate_cap
+        return float(max(-gcap, min(gcap, x)))
+
     def _update_expectations(self):
         ecfg = self.config.expectations
         s = ecfg.smoothing
         w = ecfg.signal_window
-        # Realistic absolute band on the monthly growth RATE (~+/-12%/yr). This is
-        # not a perpetuity stabiliser (the user-cost valuation is already stable);
-        # it just keeps the extrapolated growth rate economically sane.
-        GCAP = 0.0015
 
-        def clamp(x):
-            return float(max(-GCAP, min(GCAP, x)))
-
-        # Global signals (institutions): growth and growth-rate volatility.
-        g_price = clamp(exp.growth_signal(self._price_history, w))
-        g_rent = clamp(exp.growth_signal(self._rent_history, w))
+        # Global signals for institutions
+        g_price = self.clamp(exp.growth_signal(self._price_history, w))
+        g_rent = self.clamp(exp.growth_signal(self._rent_history, w))
         v_price = exp.volatility_signal(self._price_history, w)
         v_rent = exp.volatility_signal(self._rent_history, w)
-
-        # Institutional forecast (rolling OLS on the market state) -> growth rate.
         inst_change = exp.institutional_price_forecast(self._state_history, w)
         cur_price = self._price_history[-1] if self._price_history else 1.0
-        inst_price_growth = clamp(inst_change / max(cur_price, 1e-9))
-        inst_rent_growth = clamp(exp.institutional_rent_growth_signal(self._state_history, w))
+        inst_price_growth = self.clamp(inst_change / max(cur_price, 1e-9))
+        inst_rent_growth = self.clamp(exp.inst_rent_growth_signal(self._state_history, w))
 
-        # Per-zone local signals for households (bounded vision).
+        # Local signals for households (bounded vision)
         zone_price_growth = self._zone_price_growth(w)
-
         for a in self.agents:
             if isinstance(a, HouseholdAgent):
-                local_g = clamp(zone_price_growth.get(a.home_zone, g_price))
-                npg = clamp(exp.adaptive_update(a.expected_price_growth, local_g, s))
-                nrg = clamp(exp.adaptive_update(a.expected_rent_growth, g_rent, s))
+                local_g = self.clamp(zone_price_growth.get(a.home_zone, g_price))
+                npg = self.clamp(exp.adaptive_update(a.expected_price_growth, local_g, s))
+                nrg = self.clamp(exp.adaptive_update(a.expected_rent_growth, g_rent, s))
                 npv = exp.adaptive_update(a.expected_price_vol, v_price, s)
                 nrv = exp.adaptive_update(a.expected_rent_vol, v_rent, s)
                 if ecfg.household_noise_sd > 0:
-                    npg = clamp(npg + float(self.rng.normal(0.0, ecfg.household_noise_sd)))
-                    nrg = clamp(nrg + float(self.rng.normal(0.0, ecfg.household_noise_sd)))
+                    npg = self.clamp(npg + float(self.rng.normal(0.0, ecfg.household_noise_sd)))
+                    nrg = self.clamp(nrg + float(self.rng.normal(0.0, ecfg.household_noise_sd)))
                 a.set_expectations(npg, nrg, max(0.0, npv), max(0.0, nrv))
             else:
-                npg = clamp(exp.adaptive_update(a.expected_price_growth, inst_price_growth, s))
-                nrg = clamp(exp.adaptive_update(a.expected_rent_growth, inst_rent_growth, s))
+                npg = self.clamp(exp.adaptive_update(a.expected_price_growth, inst_price_growth, s))
+                nrg = self.clamp(exp.adaptive_update(a.expected_rent_growth, inst_rent_growth, s))
                 if ecfg.inst_noise_sd > 0:
-                    npg = clamp(npg + float(self.rng.normal(0.0, ecfg.inst_noise_sd)))
-                    nrg = clamp(nrg + float(self.rng.normal(0.0, ecfg.inst_noise_sd)))
+                    npg = self.clamp(npg + float(self.rng.normal(0.0, ecfg.inst_noise_sd)))
+                    nrg = self.clamp(nrg + float(self.rng.normal(0.0, ecfg.inst_noise_sd)))
                 a.set_expectations(npg, nrg, v_price, v_rent)
 
     def _zone_price_growth(self, window):
         """Per-zone recent transaction-price growth (bounded-vision signal).
 
-        Falls back silently to the global growth when a zone has too few trades.
+        Falls back to the global growth when a zone has too few trades (at init).
         """
         out = {}
         hist = getattr(self, "_zone_price_history", None)
@@ -404,24 +410,25 @@ class HousingModel(mesa.Model):
     def _mark_to_market(self):
         """Nudge estimated values toward the latest MEDIAN transaction price.
 
-        Uses the median (robust to a few very large institutional bids) and moves
-        only a small fraction of the way toward it, so revaluation cannot run away
-        in a positive feedback loop with WTP.
+        Uses the median for robustness and moves only a small fraction toward it.
         """
         if not self.this_step_transactions:
             return
+        adj_pct = self.config.expectations.mark_to_market_adj_pct
         latest = float(np.median([t.price for t in self.this_step_transactions]))
         ref = float(np.median([p.estimated_value for p in self.properties]))
         if ref <= 0 or latest <= 0:
             return
-        ratio = min(max(latest / ref, 0.8), 1.25)  # clip extreme moves
-        adj = 1.0 + 0.05 * (ratio - 1.0)            # move 5% of the way
+        ratio = latest / ref
+        adj = 1.0 + adj_pct * (ratio - 1.0)
         for p in self.properties:
             p.estimated_value = max(1.0, p.estimated_value * adj)
         for a in self.agents:
             owned = a.owned_properties
             if owned:
-                a._housing_asset_value = sum(self._property_map[pid].estimated_value for pid in owned)
+                a._housing_asset_value = sum(
+                    self._property_map[pid].estimated_value for pid in owned
+                )
 
     # -------------------------------------------------------------- rent / lease
     def _service_rents(self, market_rent):
@@ -448,10 +455,18 @@ class HousingModel(mesa.Model):
     def _expire_leases(self):
         mcfg = self.config.market
         for prop in self.properties:
-            if prop.occupant_id is None or prop.owner_id is None or prop.occupant_id == prop.owner_id:
+            if (
+                prop.occupant_id is None
+                or prop.owner_id is None
+                or prop.occupant_id == prop.owner_id
+            ):
                 continue
             prop.tenancy_months += 1
-            prob = mcfg.normal_exit_prob if prop.tenancy_months >= mcfg.min_tenancy else mcfg.early_exit_prob
+            prob = (
+                mcfg.normal_exit_prob
+                if prop.tenancy_months >= mcfg.min_tenancy
+                else mcfg.early_exit_prob
+            )
             if prob > 0 and self.rng.random() < prob:
                 tenant = self._agent_map.get(prop.occupant_id)
                 if tenant is not None:
@@ -462,7 +477,7 @@ class HousingModel(mesa.Model):
 
     # --------------------------------------------------------- candidate indices
     def _build_candidate_index(self):
-        """Pre-compute zone→property-ID indices for O(1) candidate lookups."""
+        """Pre-compute zone→property-ID indices for candidate lookups."""
         by_zone = {z: set() for z in range(self.n_zones)}
         rental_by_zone = {z: set() for z in range(self.n_zones)}
         for p in self.properties:
@@ -496,7 +511,8 @@ class HousingModel(mesa.Model):
         if not hasattr(self, "_rental_by_zone"):
             # Fallback during __init__ before index is built
             listed = [
-                p for p in self.properties
+                p
+                for p in self.properties
                 if p.listed_for_rent and p.occupant_id is None and p.owner_id != agent.unique_id
             ]
             if agent.home_property is None:
@@ -549,12 +565,13 @@ class HousingModel(mesa.Model):
             for pid in list(agent.owned_properties):
                 prop = self._property_map[pid]
                 if pid in forced or agent_actions.get(pid) == "sell":
-                    reservation = 0.0 if pid in forced else agent.reservation_price(prop, market_rent)
+                    reservation = (
+                        0.0 if pid in forced else agent.reservation_price(prop, market_rent)
+                    )
                     market.list_property(pid, agent.unique_id, reservation)
                     prop.listed_for_sale = True
 
     def _list_for_rent(self, actions):
-        # auto-listed vacant rentals stay listed; 'let' action lists an investment unit
         for agent in self.agents:
             agent_actions = actions.get(agent.unique_id, {})
             for pid in list(agent.owned_properties):
@@ -576,7 +593,9 @@ class HousingModel(mesa.Model):
             if chosen is None:
                 continue
             bid = agent.compute_bid(chosen, purpose, market_rent)
-            total_income = getattr(agent, "income", 0.0) + getattr(agent, "rental_income_monthly", 0.0) * 12
+            total_income = (
+                getattr(agent, "income", 0.0) + getattr(agent, "rental_income_monthly", 0.0) * 12
+            )
             existing = getattr(agent, "mortgage_payment_due", lambda: 0.0)()
             ceiling = self.credit.max_price(purpose, agent.cash, total_income, existing)
             bid = min(bid, ceiling)
@@ -586,7 +605,9 @@ class HousingModel(mesa.Model):
             market.submit_bid(chosen.id, agent.unique_id, bid, btype, purpose)
 
     def _purchase_feasible(self, agent, prop, purpose):
-        total_income = getattr(agent, "income", 0.0) + getattr(agent, "rental_income_monthly", 0.0) * 12
+        total_income = (
+            getattr(agent, "income", 0.0) + getattr(agent, "rental_income_monthly", 0.0) * 12
+        )
         existing = getattr(agent, "mortgage_payment_due", lambda: 0.0)()
         ceiling = self.credit.max_price(purpose, agent.cash, total_income, existing)
         if ceiling <= 0:
@@ -669,18 +690,17 @@ class HousingModel(mesa.Model):
 
     # ------------------------------------------------------------- record state
     def _record_state(self):
-        # Price index: median estimated value of the whole stock. This is a stable,
-        # representative index (mark-to-market already smooths it toward transaction
-        # prices) and avoids the spurious volatility of a few-transaction mean, which
-        # otherwise inflated the growth-rate volatility and crushed risk-adjusted WTP.
+        # Price index: median estimated value of the whole stock.
         self._price_history.append(float(np.median([p.estimated_value for p in self.properties])))
-        rents = [p.current_rent for p in self.properties
-                 if p.current_rent and p.occupant_id is not None and p.occupant_id != p.owner_id]
+        rents = [
+            p.current_rent
+            for p in self.properties
+            if p.current_rent and p.occupant_id is not None and p.occupant_id != p.owner_id
+        ]
         if rents:
             self._rent_history.append(float(np.mean(rents)))
 
-        # per-zone price index (median estimated value in the zone) for the
-        # bounded-vision household signal; stable like the global index.
+        # per-zone price index (median estimated value in the zone)
         zh = getattr(self, "_zone_price_history", None)
         if zh is None:
             zh = {z: [] for z in range(self.n_zones)}
@@ -695,15 +715,17 @@ class HousingModel(mesa.Model):
         insts = [a for a in self.agents if isinstance(a, InstitutionalAgent)]
         inst_units = sum(len(i.portfolio) for i in insts)
         ltvs = [m[1] for a in self.agents for m in a._mortgages.values()]
-        self._state_history.append({
-            "step": self.steps,
-            "price": self._price_history[-1] if self._price_history else 0.0,
-            "rent": self._rent_history[-1] if self._rent_history else 0.0,
-            "volume": len(self.this_step_transactions),
-            "macro": self.current_macro_state,
-            "avg_ltv": float(np.mean(ltvs)) if ltvs else 0.0,
-            "inst_share": inst_units / max(len(self.properties), 1),
-        })
+        self._state_history.append(
+            {
+                "step": self.steps,
+                "price": self._price_history[-1] if self._price_history else 0.0,
+                "rent": self._rent_history[-1] if self._rent_history else 0.0,
+                "volume": len(self.this_step_transactions),
+                "macro": self.current_macro_state,
+                "avg_ltv": float(np.mean(ltvs)) if ltvs else 0.0,
+                "inst_share": inst_units / max(len(self.properties), 1),
+            }
+        )
 
     # ------------------------------------------------------------- visual grid
     def _sync_visual_grid(self):
@@ -730,7 +752,8 @@ class HousingModel(mesa.Model):
         households = [a for a in self.agents if isinstance(a, HouseholdAgent)]
         return {
             "step": self.steps,
-            "hh_ownership_rate": sum(1 for h in households if h.owned_properties) / max(len(households), 1),
+            "hh_ownership_rate": sum(1 for h in households if h.owned_properties)
+            / max(len(households), 1),
             "renters": sum(1 for h in households if h.is_renter and h.home_property is not None),
             "landlords": sum(1 for h in households if h.is_landlord),
         }

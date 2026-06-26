@@ -1,3 +1,7 @@
+"""
+Plotting utility for a single simulation run.
+"""
+
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -20,11 +24,7 @@ def plot_summary(df: pd.DataFrame, out_png: str):
     df_filled = df.copy()
     for col in ("avg_sale_price", "avg_rent"):
         if col in df_filled.columns:
-            med = (
-                float(df_filled[col].median(skipna=True))
-                if df_filled[col].notna().any()
-                else 0.0
-            )
+            med = float(df_filled[col].median(skipna=True)) if df_filled[col].notna().any() else 0.0
             df_filled[col + "_filled"] = df_filled[col].ffill().fillna(med)
 
     cols = 2
@@ -52,12 +52,19 @@ def plot_summary(df: pd.DataFrame, out_png: str):
         ax[2].text(0.5, 0.5, "ownership_rate not collected", ha="center")
 
     stock_cols = []
-    for c in ("owner_occupier_ownership_share", "landlord_ownership_share", "institutional_ownership_share"):
+    for c in (
+        "owner_occupier_ownership_share",
+        "landlord_ownership_share",
+        "institutional_ownership_share",
+    ):
         if c in df_filled.columns:
             stock_cols.append(c)
     if len(stock_cols) == 3:
         _stacked_share_plot(
-            ax[3], df_filled, stock_cols, "Housing Stock Ownership by Kind",
+            ax[3],
+            df_filled,
+            stock_cols,
+            "Housing Stock Ownership by Kind",
             colors=["#4c72b0", "#dd8452", "#55a868"],
         )
     elif "institutional_ownership_share" in df_filled.columns:
@@ -70,7 +77,10 @@ def plot_summary(df: pd.DataFrame, out_png: str):
     mp_count_cols = ["owner_occupier_share", "landlord_share", "institution_share"]
     if all(c in df_filled.columns for c in mp_count_cols):
         _stacked_share_plot(
-            ax[4], df_filled, mp_count_cols, "Marginal Pricer Share (count)",
+            ax[4],
+            df_filled,
+            mp_count_cols,
+            "Marginal Pricer Share (count)",
             colors=["#4c72b0", "#dd8452", "#55a868"],
         )
     elif "institutional_ownership_share" in df_filled.columns:
@@ -80,10 +90,17 @@ def plot_summary(df: pd.DataFrame, out_png: str):
     else:
         ax[4].text(0.5, 0.5, "Marginal pricer data not collected", ha="center")
 
-    mp_value_cols = ["owner_occupier_value_share", "landlord_value_share", "institution_value_share"]
+    mp_value_cols = [
+        "owner_occupier_value_share",
+        "landlord_value_share",
+        "institution_value_share",
+    ]
     if all(c in df_filled.columns for c in mp_value_cols):
         _stacked_share_plot(
-            ax[5], df_filled, mp_value_cols, "Marginal Pricer Share (value)",
+            ax[5],
+            df_filled,
+            mp_value_cols,
+            "Marginal Pricer Share (value)",
             colors=["#4c72b0", "#dd8452", "#55a868"],
         )
     else:

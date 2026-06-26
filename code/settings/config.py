@@ -68,8 +68,7 @@ class AgentInitConfig(BaseModel):
     risk_aversion_sigma: float = Field(0.5, ge=0)
     inst_cash_low: float = Field(7_500_000.0, ge=0)
     inst_cash_high: float = Field(50_000_000.0, ge=0)
-    inst_required_return: float = Field(0.0015, ge=0)
-    inst_min_yield: float = Field(0.04, ge=0)
+    inst_required_return: float = Field(0.0015, ge=0)  # this is net of funding cost, and monthly
     loss_aversion: float = Field(1.30, ge=0)
 
 
@@ -109,9 +108,13 @@ class ExpectationsConfig(BaseModel):
     # Initial expectations of the *volatility of the growth rate* (monthly std)
     init_price_vol: float = Field(0.005, ge=0)
     init_rent_vol: float = Field(0.005, ge=0)
-    # Idiosyncratic noise added to expectations each period.
+    # Idiosyncratic noise added to each agent's expectations each period.
     inst_noise_sd: float = Field(0.0003, ge=0)
     household_noise_sd: float = Field(0.0006, ge=0)
+    growth_rate_cap: float = Field(0.0015, ge=0)  # cap on the monthly expected growth rate
+    mark_to_market_adj_pct: float = Field(
+        0.05, ge=0
+    )  # fraction of to nudge market values to account for recent price growth
 
 
 class MarketConfig(BaseModel):
