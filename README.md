@@ -18,7 +18,8 @@ This repository contains an agent-based model (ABM) of the UK housing market bui
 │   ├── sensitivity/      #   Sobol sensitivity analysis scripts
 │   ├── plotting/         #   Plotting utilities (policy analysis, run summary)
 │   ├── test/             #   Unit and regression tests (unittest)
-│   └── run.py            #   CLI entry point
+│   ├── run.py            #   CLI entry point
+│   └── policy_analysis.py #   Multi-seed policy experiment runner
 ├── results/              # Output figures, CSVs, and analysis plots
 ├── parameters.md         # Detailed explanation of model parameters
 ├── pyproject.toml        # Dependency management via uv
@@ -36,7 +37,7 @@ This repository contains an agent-based model (ABM) of the UK housing market bui
 
 ```bash
 git clone https://github.com/tim-degroot/abm.git
-uv run python -m code.run
+uv run -m code.run
 
 ```
 
@@ -45,9 +46,9 @@ uv run python -m code.run
 We use the standard `unittest` framework. To test the model components:
 
 ```bash
-uv run python -m unittest                 # run all tests
-uv run python -m unittest -v              # verbose mode
-uv run python -m unittest code.test.test_credit  # single module
+uv run -m unittest                 # run all tests
+uv run -m unittest -v              # verbose mode
+uv run -m unittest code.test.test_credit  # single module
 
 ```
 
@@ -56,19 +57,19 @@ uv run python -m unittest code.test.test_credit  # single module
 Policies form the design framework used for experiments on our model. These policies are defined in `code/settings/policies.py` where their effects and parameters can be changed. Run experiments by passing the policy name as an argument:
 
 ```bash
-uv run python -m code.run --experiment [policy]
+uv run -m code.run --experiment [policy]
 
 ```
 
 **Examples:**
 
 ```bash
-uv run python -m code.run --experiment rate-up         # mortgage/funding rate increase
-uv run python -m code.run --experiment rate-down
-uv run python -m code.run --experiment ltv-tighten     # lower LTV caps
-uv run python -m code.run --experiment ltv-loosen
-uv run python -m code.run --experiment tightening      # combined rate up + LTV/DTI tighten
-uv run python -m code.run --experiment rate-up --shock-step 120
+uv run -m code.run --experiment rate-up         # mortgage/funding rate increase
+uv run -m code.run --experiment rate-down
+uv run -m code.run --experiment ltv-tighten     # lower LTV caps
+uv run -m code.run --experiment ltv-loosen
+uv run -m code.run --experiment tightening      # combined rate up + LTV/DTI tighten
+uv run -m code.run --experiment rate-up --shock-step 120
 
 ```
 
@@ -76,10 +77,10 @@ uv run python -m code.run --experiment rate-up --shock-step 120
 
 The Policy Analysis wrapper is designed to run multiple seeds of experiments in a parallel way and generate visualizations based on these results.
 
-Upon reviewing the configuration within the `code/plotting/plot_experiment.py` file this analysis can be run using the following command:
+This analysis can be run using the following command:
 
 ```bash
-uv run python -m code.plotting.plot_experiment
+uv run -m code.policy_analysis
 
 ```
 
@@ -90,15 +91,15 @@ This produces `responses.csv` with all results, a response figure per experiment
 Three-stage Sobol global sensitivity analysis with stochastic replicates:
 
 ```bash
-uv run python -m code.sensitivity --generate                 # stage 1: Saltelli samples (once)
-uv run python -m code.sensitivity --evaluate --model-seed 0  # stage 2: per seed
-uv run python -m code.sensitivity --aggregate                # stage 3: Sobol indices from all seeds
+uv run -m code.sensitivity --generate                 # stage 1: Saltelli samples (once)
+uv run -m code.sensitivity --evaluate --model-seed 0  # stage 2: per seed
+uv run -m code.sensitivity --aggregate                # stage 3: Sobol indices from all seeds
 
 ```
 
 The analysis is configured in `code/settings/sensitivity_config.yaml` — choose which parameters to vary, their bounds, and which response metrics to use. After aggregation, the 2×2 grid of first-order vs total-order indices can be plotted:
 
 ```bash
-uv run python -m code.sensitivity.analysis   # → results/sensitivity/global_sa.png
+uv run -m code.sensitivity.analysis   # → results/sensitivity/global_sa.png
 
 ```

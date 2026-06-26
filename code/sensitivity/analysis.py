@@ -3,7 +3,7 @@ Global sensitivity analysis figure: 2x2 grid of Sobol indices.
 
 Usage
 -----
-    uv run python sensitivity/analysis.py
+    uv run -m code.sensitivity.analysis
 """
 
 import os
