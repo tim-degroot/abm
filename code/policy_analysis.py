@@ -38,7 +38,7 @@ POST_SHOCK_MONTHS = 120
 ROLLING_WINDOW = 12
 WORKERS = 16
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "results" / "credit_shocks"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "results" / "policy_analysis"
 
 POLICIES_TO_RUN = [
     "rate-up",
