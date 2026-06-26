@@ -13,11 +13,15 @@ from code.utility import risk_adjusted_growth, logit_choice, logit_probabilities
 
 class TestRiskAdjustedGrowth(unittest.TestCase):
     def test_risk_neutral(self):
-        result = risk_adjusted_growth(expected_growth=0.01, expected_volatility=0.1, risk_loading=0.0)
+        result = risk_adjusted_growth(
+            expected_growth=0.01, expected_volatility=0.1, risk_loading=0.0
+        )
         self.assertAlmostEqual(result, 0.01)
 
     def test_risk_adjusts_downward(self):
-        result = risk_adjusted_growth(expected_growth=0.01, expected_volatility=0.1, risk_loading=0.5)
+        result = risk_adjusted_growth(
+            expected_growth=0.01, expected_volatility=0.1, risk_loading=0.5
+        )
         self.assertAlmostEqual(result, -0.04)
 
     def test_negative_volatility_raises(self):

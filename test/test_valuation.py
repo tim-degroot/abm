@@ -19,19 +19,27 @@ from code.valuation import (
 
 class TestHousingConsumptionValue(unittest.TestCase):
     def test_median_quality(self):
-        val = housing_consumption_value(quality=0.0, quality_value_scale=200, base_housing_value=800)
+        val = housing_consumption_value(
+            quality=0.0, quality_value_scale=200, base_housing_value=800
+        )
         self.assertAlmostEqual(val, 800)
 
     def test_positive_quality(self):
-        val = housing_consumption_value(quality=1.0, quality_value_scale=200, base_housing_value=800)
+        val = housing_consumption_value(
+            quality=1.0, quality_value_scale=200, base_housing_value=800
+        )
         self.assertAlmostEqual(val, 1000)
 
     def test_negative_quality(self):
-        val = housing_consumption_value(quality=-1.0, quality_value_scale=200, base_housing_value=800)
+        val = housing_consumption_value(
+            quality=-1.0, quality_value_scale=200, base_housing_value=800
+        )
         self.assertAlmostEqual(val, 600)
 
     def test_clips_below_zero(self):
-        val = housing_consumption_value(quality=-10.0, quality_value_scale=200, base_housing_value=800)
+        val = housing_consumption_value(
+            quality=-10.0, quality_value_scale=200, base_housing_value=800
+        )
         self.assertAlmostEqual(val, 0.0)
 
 
@@ -86,7 +94,9 @@ class TestDCFPrice(unittest.TestCase):
 class TestHouseholdBuyWTP(unittest.TestCase):
     def test_credit_ceiling_clips(self):
         wtp = household_buy_wtp(
-            quality=1.0, quality_value_scale=200, base_housing_value=800,
+            quality=1.0,
+            quality_value_scale=200,
+            base_housing_value=800,
             mortgage_rate=0.00308,
             risk_adjusted_price_growth=0.001,
             price_anchor=200_000.0,
@@ -97,7 +107,9 @@ class TestHouseholdBuyWTP(unittest.TestCase):
 
     def test_returns_positive(self):
         wtp = household_buy_wtp(
-            quality=0.5, quality_value_scale=200, base_housing_value=800,
+            quality=0.5,
+            quality_value_scale=200,
+            base_housing_value=800,
             mortgage_rate=0.00308,
             risk_adjusted_price_growth=0.001,
             price_anchor=200_000.0,
@@ -110,7 +122,9 @@ class TestHouseholdBuyWTP(unittest.TestCase):
 class TestHouseholdBtlWTP(unittest.TestCase):
     def test_credit_ceiling_clips(self):
         wtp = household_btl_wtp(
-            quality=1.0, quality_sensitivity=0.3, base_rent=1000,
+            quality=1.0,
+            quality_sensitivity=0.3,
+            base_rent=1000,
             funding_rate=0.008,
             risk_adjusted_rent_growth=0.001,
             risk_adjusted_price_growth=0.001,
@@ -122,7 +136,9 @@ class TestHouseholdBtlWTP(unittest.TestCase):
 
     def test_returns_positive(self):
         wtp = household_btl_wtp(
-            quality=0.5, quality_sensitivity=0.3, base_rent=1000,
+            quality=0.5,
+            quality_sensitivity=0.3,
+            base_rent=1000,
             funding_rate=0.008,
             risk_adjusted_rent_growth=0.001,
             risk_adjusted_price_growth=0.001,
@@ -136,7 +152,9 @@ class TestHouseholdBtlWTP(unittest.TestCase):
 class TestInstitutionalWTP(unittest.TestCase):
     def test_credit_ceiling_clips(self):
         wtp = institutional_wtp(
-            quality=1.0, quality_sensitivity=0.3, base_rent=1000,
+            quality=1.0,
+            quality_sensitivity=0.3,
+            base_rent=1000,
             funding_rate=0.0045,
             required_return=0.0015,
             rent_growth=0.001,
@@ -149,7 +167,9 @@ class TestInstitutionalWTP(unittest.TestCase):
 
     def test_returns_positive(self):
         wtp = institutional_wtp(
-            quality=0.5, quality_sensitivity=0.3, base_rent=1000,
+            quality=0.5,
+            quality_sensitivity=0.3,
+            base_rent=1000,
             funding_rate=0.0045,
             required_return=0.0015,
             rent_growth=0.001,
@@ -165,23 +185,32 @@ class TestHouseholdRentWTP(unittest.TestCase):
     def test_benefit_constrained(self):
         # benefit = 800 + 200*0.5 = 900; ceiling = 50K/12 * 0.4 = 1667; min = 900
         wtp = household_rent_wtp(
-            quality=0.5, quality_value_scale=200, base_housing_value=800,
-            income=50_000, dti_limit=0.4,
+            quality=0.5,
+            quality_value_scale=200,
+            base_housing_value=800,
+            income=50_000,
+            dti_limit=0.4,
         )
         self.assertAlmostEqual(wtp, 900)
 
     def test_income_constrained(self):
         # benefit = 800 + 200*1.0 = 1000; ceiling = 12K/12 * 0.4 = 400; min = 400
         wtp = household_rent_wtp(
-            quality=1.0, quality_value_scale=200, base_housing_value=800,
-            income=12_000, dti_limit=0.4,
+            quality=1.0,
+            quality_value_scale=200,
+            base_housing_value=800,
+            income=12_000,
+            dti_limit=0.4,
         )
         self.assertAlmostEqual(wtp, 400)
 
     def test_zero_income(self):
         wtp = household_rent_wtp(
-            quality=0.5, quality_value_scale=200, base_housing_value=800,
-            income=0, dti_limit=0.4,
+            quality=0.5,
+            quality_value_scale=200,
+            base_housing_value=800,
+            income=0,
+            dti_limit=0.4,
         )
         self.assertAlmostEqual(wtp, 0.0)
 

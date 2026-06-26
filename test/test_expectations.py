@@ -69,12 +69,30 @@ class TestVolatilitySignal(unittest.TestCase):
 class TestDesignMatrix(unittest.TestCase):
     def test_shape(self):
         history = [
-            {"price": 200_000, "rent": 1000, "volume": 5, "macro": "Neutral",
-             "avg_ltv": 0.85, "inst_share": 0.3},
-            {"price": 201_000, "rent": 1010, "volume": 6, "macro": "Boom",
-             "avg_ltv": 0.86, "inst_share": 0.31},
-            {"price": 202_000, "rent": 1020, "volume": 7, "macro": "Recession",
-             "avg_ltv": 0.84, "inst_share": 0.29},
+            {
+                "price": 200_000,
+                "rent": 1000,
+                "volume": 5,
+                "macro": "Neutral",
+                "avg_ltv": 0.85,
+                "inst_share": 0.3,
+            },
+            {
+                "price": 201_000,
+                "rent": 1010,
+                "volume": 6,
+                "macro": "Boom",
+                "avg_ltv": 0.86,
+                "inst_share": 0.31,
+            },
+            {
+                "price": 202_000,
+                "rent": 1020,
+                "volume": 7,
+                "macro": "Recession",
+                "avg_ltv": 0.84,
+                "inst_share": 0.29,
+            },
         ]
         X = _design_matrix(history)
         # 3 time-points → 2 transitions → 2 rows, 8 features
@@ -102,11 +120,13 @@ class TestFallbackPriceChange(unittest.TestCase):
         self.assertAlmostEqual(result, 0.0)
 
     def test_median_change(self):
-        result = _fallback_price_change([
-            {"price": 200_000},
-            {"price": 201_000},
-            {"price": 203_000},
-        ])
+        result = _fallback_price_change(
+            [
+                {"price": 200_000},
+                {"price": 201_000},
+                {"price": 203_000},
+            ]
+        )
         self.assertAlmostEqual(result, 1500.0)  # median of [1000, 2000]
 
     def test_empty_returns_zero(self):
@@ -125,28 +145,32 @@ class TestInstitutionalPriceForecast(unittest.TestCase):
     def test_ols_returns_finite(self):
         history = []
         for i in range(10):
-            history.append({
-                "price": float(200_000 + i * 1000),
-                "rent": float(1000 + i * 10),
-                "volume": 5 + i,
-                "avg_ltv": 0.85,
-                "inst_share": 0.3,
-                "macro": "Neutral",
-            })
+            history.append(
+                {
+                    "price": float(200_000 + i * 1000),
+                    "rent": float(1000 + i * 10),
+                    "volume": 5 + i,
+                    "avg_ltv": 0.85,
+                    "inst_share": 0.3,
+                    "macro": "Neutral",
+                }
+            )
         result = institutional_price_forecast(history, window=5)
         self.assertTrue(np.isfinite(result))
 
     def test_underdetermined_falls_back(self):
         history = []
         for i in range(7):  # 6 transitions but 8 features → underdetermined
-            history.append({
-                "price": float(200_000 + i * 1000),
-                "rent": float(1000 + i * 10),
-                "volume": 5 + i,
-                "avg_ltv": 0.85,
-                "inst_share": 0.3,
-                "macro": "Neutral",
-            })
+            history.append(
+                {
+                    "price": float(200_000 + i * 1000),
+                    "rent": float(1000 + i * 10),
+                    "volume": 5 + i,
+                    "avg_ltv": 0.85,
+                    "inst_share": 0.3,
+                    "macro": "Neutral",
+                }
+            )
         # window = 8 means window+1 = 9, so we have 7 < 9 → fallback
         result = institutional_price_forecast(history, window=8)
         self.assertAlmostEqual(result, _fallback_price_change(history))
@@ -155,6 +179,7 @@ class TestInstitutionalPriceForecast(unittest.TestCase):
 class TestInstitutionalRentGrowthSignal(unittest.TestCase):
     def test_delegates_to_growth_signal(self):
         from code.expectations import institutional_rent_growth_signal
+
         result = institutional_rent_growth_signal(
             [{"rent": 1000}, {"rent": 1010}, {"rent": 1020}],
             window=5,

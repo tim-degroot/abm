@@ -14,19 +14,20 @@ from code.config import Config
 from code.model import HousingModel
 from code.agents import HouseholdAgent, InstitutionalAgent
 
-
 _N_STEPS = 24
 
 
 def _make_config(n_households=20, n_institutions=3, n_properties=25, seed=42):
     cfg = Config()
-    sim = cfg.sim.model_copy(update={
-        "n_households": n_households,
-        "n_institutions": n_institutions,
-        "n_properties": n_properties,
-        "n_steps": _N_STEPS,
-        "seed": seed,
-    })
+    sim = cfg.sim.model_copy(
+        update={
+            "n_households": n_households,
+            "n_institutions": n_institutions,
+            "n_properties": n_properties,
+            "n_steps": _N_STEPS,
+            "seed": seed,
+        }
+    )
     return cfg.model_copy(update={"sim": sim})
 
 
@@ -47,7 +48,8 @@ class TestModelInvariants(unittest.TestCase):
             if isinstance(agent, HouseholdAgent) and agent._mortgages:
                 max_shortfall = agent.mortgage_payment_due()
                 self.assertGreaterEqual(
-                    agent.cash, -max_shortfall - 1e-6,
+                    agent.cash,
+                    -max_shortfall - 1e-6,
                     f"Agent {agent.unique_id} cash={agent.cash:.2f} "
                     f"below max shortfall -{max_shortfall:.2f}",
                 )
@@ -63,7 +65,9 @@ class TestModelInvariants(unittest.TestCase):
             inst = self.df.iloc[step_idx].get("institution_share", 0.0) or 0.0
             total = oo + ll + inst
             self.assertAlmostEqual(
-                total, 1.0, delta=1e-9,
+                total,
+                1.0,
+                delta=1e-9,
                 msg=f"Step {step_idx}: shares sum to {total}, vol={vol}",
             )
 
@@ -85,9 +89,13 @@ class TestModelInvariants(unittest.TestCase):
         self.assertTrue((vols >= 0).all())
 
     def test_ownership_rates_in_bounds(self):
-        for col in ("ownership_rate", "institutional_ownership_share",
-                     "household_ownership_share", "owner_occupier_ownership_share",
-                     "landlord_ownership_share"):
+        for col in (
+            "ownership_rate",
+            "institutional_ownership_share",
+            "household_ownership_share",
+            "owner_occupier_ownership_share",
+            "landlord_ownership_share",
+        ):
             series = self.df[col].dropna()
             if len(series) == 0:
                 continue
@@ -110,7 +118,8 @@ class TestMultiWinRegression(unittest.TestCase):
             if isinstance(agent, HouseholdAgent) and agent._mortgages:
                 max_shortfall = agent.mortgage_payment_due()
                 self.assertGreaterEqual(
-                    agent.cash, -max_shortfall - 1e-6,
+                    agent.cash,
+                    -max_shortfall - 1e-6,
                     f"Agent {agent.unique_id} cash={agent.cash:.2f} "
                     f"below max shortfall -{max_shortfall:.2f}",
                 )

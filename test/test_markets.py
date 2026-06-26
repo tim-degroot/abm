@@ -119,8 +119,11 @@ class TestOwnershipMarket(unittest.TestCase):
         market = OwnershipMarket(step=5)
         market.list_property(property_id=1, owner_id=10, reservation=0)
         market.submit_bid(
-            property_id=1, bidder_id=20, amount=100_000,
-            bidder_type="household", purpose="buy",
+            property_id=1,
+            bidder_id=20,
+            amount=100_000,
+            bidder_type="household",
+            purpose="buy",
         )
         txns = market.resolve()
         self.assertEqual(len(txns), 1)
