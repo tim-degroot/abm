@@ -26,7 +26,7 @@ def risk_adjusted_growth(
     return expected_growth - risk_loading * expected_volatility
 
 
-def _logit_probs(values: Mapping[Hashable, float]):
+def _softmax(values: Mapping[Hashable, float]):
     """Return (labels, probs) from a value mapping."""
     labels = list(values.keys())
     vals = np.array(list(values.values()), dtype=float)
@@ -48,7 +48,7 @@ def logit_choice(
 
     Infeasible options carry value -inf and receive zero probability.
     """
-    labels, probs = _logit_probs(values)
+    labels, probs = _softmax(values)
     if not np.any(np.isfinite(list(values.values()))):
         for fallback in ("hold", "none", "stay", "do_nothing"):
             if fallback in values:
@@ -59,7 +59,7 @@ def logit_choice(
 
 def logit_probabilities(values: Mapping[Hashable, float]):
     """Return {label: probability} for diagnostics / property selection weighting."""
-    labels, probs = _logit_probs(values)
+    labels, probs = _softmax(values)
     return {k: float(p) for k, p in zip(labels, probs)}
 
 
