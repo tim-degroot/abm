@@ -3,7 +3,7 @@
 # sensitivity.sh
 # Runs the sensitivity analysis on the HPC cluster.
 # Before running: uv run -m code.sensitivity --generate
-# Usage: sbatch policy_analysis.sh
+# Usage: sbatch sensitivity_analysis.sh
 # After running: uv run -m code.sensitivity --aggregate
 # =====================================================
 #SBATCH --job-name=abm-sa
