@@ -155,6 +155,14 @@ def total_household_net_worth(model):
     return sum(a.net_worth for a in model.agents if isinstance(a, HouseholdAgent))
 
 
+def avg_household_net_worth(model):
+    """Mean household net worth."""
+    households = [a for a in model.agents if isinstance(a, HouseholdAgent)]
+    if not households:
+        return np.nan
+    return sum(a.net_worth for a in households) / len(households)
+
+
 def price_to_rent_ratio(model):
     """Average estimated value / average current rent."""
     rents = [
@@ -275,6 +283,7 @@ MODEL_REPORTERS = {
     "landlord_value_share": landlord_value_share,
     "institution_value_share": institution_value_share,
     "total_household_net_worth": total_household_net_worth,
+    "avg_household_net_worth": avg_household_net_worth,
     "price_to_rent_ratio": price_to_rent_ratio,
     "avg_loan_to_value": avg_loan_to_value,
     "vacancy_rate": vacancy_rate,
