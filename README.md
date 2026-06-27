@@ -103,3 +103,21 @@ The analysis is configured in `code/settings/sensitivity_config.yaml` — choose
 uv run -m code.sensitivity.analysis   # → results/sensitivity/global_sa.png
 
 ```
+
+## High Performance Computing
+
+Two `SBATCH` scripts are provided to run the policy analysis and sensitivity analysis on a HPC cluster. These require [uv](https://docs.astral.sh/uv/) to be installed on the cluster:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```bash
+sbatch policy_analysis.sh
+```
+
+```bash
+uv run -m code.sensitivity --generate   # generates Saltelli indices; can be run on login node
+sbatch sensitivity.sh                   # submits the 10 seeds for sensitivity analysis run on 2 nodes at a time.
+uv run -m code.sensitivity --aggregate  # Generates Sobol indices from all seeds; can be run on login node
+```
