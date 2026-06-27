@@ -49,6 +49,32 @@ class _ScheduledCreditShock(NoPolicy):
                 print(f"  [SHOCK @ step {model.steps}] {self.label}: {self.overrides}")
 
 
+class _ScheduledCreditMacroShock(_ScheduledCreditShock):
+    """Pair a credit package with a macro-regime shift for scenario experiments."""
+
+    def __init__(
+        self,
+        step: int,
+        overrides: dict,
+        label: str = "credit + macro shock",
+        initial=None,
+        macro: str | None = None,
+        initial_macro: str | None = "Neutral",
+    ):
+        super().__init__(step, overrides, label, initial)
+        self.macro = macro
+        self.initial_macro = initial_macro
+        self._macro_initialised = False
+
+    def on_step_start(self, model):
+        if not self._macro_initialised and self.initial_macro is not None:
+            model.current_macro_state = self.initial_macro
+            self._macro_initialised = True
+        if not self._applied and model.steps >= self.step and self.macro is not None:
+            model.current_macro_state = self.macro
+        super().on_step_start(model)
+
+
 def RateIncrease(step=240, rate=0.08 / 12):
     """Gamal interest-rate rise: 3.7% to 8% annually."""
     return _ScheduledCreditShock(
@@ -97,6 +123,102 @@ def LTVLoosen(step=240, ltv=0.74, btl_ltv=0.74, inst_ltv=0.74):
     )
 
 
+# Scenario anchors: Gamal shocks + BTL spread/LTV from Gamal's UK BTL discussion.
+LOW_RATE = 0.037 / 12  # Gamal rate
+HIGH_RATE = 0.08 / 12  # Gamal shock
+BTL_RATE_SPREAD = 0.0038 / 12  # Gamal BTL spread
+OO_LTV_TIGHT = 0.69  # Gamal median low
+OO_LTV_HIGH = 0.90  # Gamal band
+OO_LTV_LOW = 0.60  # Gamal band
+OO_LTV_LOOSE = 0.74  # Gamal median high
+BTL_LTV_TIGHT = 0.60  # Gamal BTL deposit
+BTL_LTV_LOOSE = 0.75  # Gamal BTL deposit
+INST_LTV_SCENARIO = 0.60  # model default
+DTI_TIGHT = 0.33  # Gamal affordability
+DTI_LOOSE = 0.40  # model default
+
+
+def RecessionEasingCrunch(step=240):
+    """Rates ease in recession, but underwriting tightens; tests offsetting channels."""
+    return _ScheduledCreditMacroShock(
+        step,
+        {
+            "mortgage_rate": LOW_RATE,
+            "btl_funding_rate": LOW_RATE + BTL_RATE_SPREAD,
+            "inst_funding_rate": LOW_RATE,
+            "ltv_limit": OO_LTV_TIGHT,
+            "btl_ltv": BTL_LTV_TIGHT,
+            "inst_ltv": INST_LTV_SCENARIO,
+            "dti_limit": DTI_TIGHT,
+        },
+        label="recession + rate cut, LTV/DTI crunch",
+        initial={
+            "mortgage_rate": HIGH_RATE,
+            "btl_funding_rate": HIGH_RATE + BTL_RATE_SPREAD,
+            "inst_funding_rate": HIGH_RATE,
+            "ltv_limit": OO_LTV_HIGH,
+            "btl_ltv": BTL_LTV_LOOSE,
+            "inst_ltv": INST_LTV_SCENARIO,
+            "dti_limit": DTI_LOOSE,
+        },
+        macro="Recession",
+    )
+
+
+def BoomCreditExpansion(step=240):
+    """Boom plus cheaper funding and looser constraints; tests a full credit upswing."""
+    return _ScheduledCreditMacroShock(
+        step,
+        {
+            "mortgage_rate": LOW_RATE,
+            "btl_funding_rate": LOW_RATE + BTL_RATE_SPREAD,
+            "inst_funding_rate": LOW_RATE,
+            "ltv_limit": OO_LTV_LOOSE,
+            "btl_ltv": BTL_LTV_LOOSE,
+            "inst_ltv": INST_LTV_SCENARIO,
+            "dti_limit": DTI_LOOSE,
+        },
+        label="boom + rate cut, LTV/DTI loosening",
+        initial={
+            "mortgage_rate": HIGH_RATE,
+            "btl_funding_rate": HIGH_RATE + BTL_RATE_SPREAD,
+            "inst_funding_rate": HIGH_RATE,
+            "ltv_limit": OO_LTV_LOW,
+            "btl_ltv": BTL_LTV_TIGHT,
+            "inst_ltv": INST_LTV_SCENARIO,
+            "dti_limit": DTI_TIGHT,
+        },
+        macro="Boom",
+    )
+
+
+def RecessionCreditCrunch(step=240):
+    """Recession plus tighter credit across rates, leverage, and DTI; severe stress."""
+    return _ScheduledCreditMacroShock(
+        step,
+        {
+            "mortgage_rate": HIGH_RATE,
+            "btl_funding_rate": HIGH_RATE + BTL_RATE_SPREAD,
+            "inst_funding_rate": HIGH_RATE,
+            "ltv_limit": OO_LTV_TIGHT,
+            "btl_ltv": BTL_LTV_TIGHT,
+            "inst_ltv": INST_LTV_SCENARIO,
+            "dti_limit": DTI_TIGHT,
+        },
+        label="recession + rate rise, LTV/DTI crunch",
+        initial={
+            "mortgage_rate": LOW_RATE,
+            "btl_funding_rate": LOW_RATE + BTL_RATE_SPREAD,
+            "inst_funding_rate": LOW_RATE,
+            "ltv_limit": OO_LTV_HIGH,
+            "btl_ltv": BTL_LTV_LOOSE,
+            "inst_ltv": INST_LTV_SCENARIO,
+            "dti_limit": DTI_LOOSE,
+        },
+        macro="Recession",
+    )
+
+
 def CreditTightening(step=240):
     """Combined tightening: higher rate, lower LTV, lower DTI."""
     return _ScheduledCreditShock(
@@ -123,6 +245,9 @@ EXPERIMENTS = {
     "rate-down": RateDecrease,
     "ltv-tighten": LTVTighten,
     "ltv-loosen": LTVLoosen,
+    "recession-easing-crunch": RecessionEasingCrunch,
+    "boom-credit-expansion": BoomCreditExpansion,
+    "recession-credit-crunch": RecessionCreditCrunch,
     "tightening": CreditTightening,
 }
 
@@ -133,6 +258,9 @@ __all__ = [
     "RateDecrease",
     "LTVTighten",
     "LTVLoosen",
+    "RecessionEasingCrunch",
+    "BoomCreditExpansion",
+    "RecessionCreditCrunch",
     "CreditTightening",
     "CreditShockPolicy",
     "EXPERIMENTS",
