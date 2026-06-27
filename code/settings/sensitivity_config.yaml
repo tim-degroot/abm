@@ -63,22 +63,6 @@ parameters:
     bounds: [0.0015, 0.015]
     distribution: log-uniform
 
-  # ===== LTV channel (leverage by agent type) ============================
-  # Swap these 3 vs the funding-rate group above to compare channels.
-  - name: ltv_limit
-    path: credit.ltv_limit
-    bounds: [0.60, 0.95]
-    distribution: uniform
-
-  - name: btl_ltv
-    path: credit.btl_ltv
-    bounds: [0.50, 0.85]
-    distribution: uniform
-
-  - name: inst_ltv
-    path: credit.inst_ltv
-    bounds: [0.40, 0.75]
-    distribution: uniform
 
 
 responses:
@@ -107,10 +91,10 @@ responses:
     reduce: nanmean
     description: "Mean institutional ownership share"
 
-  - name: total_net_worth
-    metric: total_household_net_worth
+  - name: avg_net_worth
+    metric: avg_household_net_worth
     reduce: nanmean
-    description: "Mean total household net worth"
+    description: "Mean household net worth"
 
   - name: net_worth_gini
     metric: household_net_worth_gini
