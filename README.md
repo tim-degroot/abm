@@ -118,6 +118,6 @@ sbatch policy_analysis.sh
 
 ```bash
 uv run -m code.sensitivity --generate   # generates Saltelli indices; can be run on login node
-sbatch sensitivity_analysis.sh                   # submits the 10 seeds for sensitivity analysis run on 2 nodes at a time.
+sbatch sensitivity_analysis.sh          # submits the 10 seeds for sensitivity analysis run on 2 nodes at a time.
 uv run -m code.sensitivity --aggregate  # Generates Sobol indices from all seeds; can be run on login node
 ```
