@@ -4,7 +4,7 @@ Tim de Groot, Tristan Farran, George Petropoulos, and Matteo Postiferi
 
 ## Overview
 
-This repository contains an agent-based model (ABM) of the UK housing market built using MESA. It aims to investigate the role of three different types of owners: owner-occupiers, private landlords, and institutions.
+This repository contains an agent-based model (ABM) of the housing market built using MESA. It aims to investigate the role of three different types of owners: owner-occupiers, private landlords, and institutions.
 
 > **Core Research Question:** Can a model of boundedly rational, utility-maximising agents with heterogeneous financing, valuation, and information structures reproduce the dynamics typically attributed to behavioural housing ABMs, while providing a structural explanation of who sets prices and why?
 
