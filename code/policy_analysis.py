@@ -46,7 +46,7 @@ TOTAL_STEPS = SHOCK_STEP + POST_SHOCK_MONTHS
 PERCENT_METRICS = [
     "sale_price",
     "rent",
-    "total_household_net_worth",
+    "avg_household_net_worth",
 ]
 POINT_METRICS = [
     "price_volatility",
