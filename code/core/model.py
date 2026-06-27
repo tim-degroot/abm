@@ -441,7 +441,7 @@ class HousingModel(mesa.Model):
             tenant = self._agent_map.get(prop.occupant_id)
             landlord = self._agent_map.get(prop.owner_id)
             rent = prop.current_rent or 0.0
-            if tenant is None or rent > tenant.income:  # cannot afford -> vacate
+            if tenant is None or rent > tenant.income / 12:  # cannot afford -> vacate
                 if tenant is not None:
                     tenant.vacate_rental()
                 prop.occupant_id = None
