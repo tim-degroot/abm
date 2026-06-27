@@ -36,27 +36,57 @@ POLICIES_TO_RUN = [
     "rate-down",
     "ltv-tighten",
     "ltv-loosen",
+    "recession-easing-crunch",
+    "boom-credit-expansion",
+    "recession-credit-crunch",
 ]
 
 TOTAL_STEPS = SHOCK_STEP + POST_SHOCK_MONTHS
-METRICS = [
+# Extended responses mirror the scenario questions: prices, volatility, composition, and wealth.
+PERCENT_METRICS = [
     "sale_price",
     "rent",
+    "total_household_net_worth",
+]
+POINT_METRICS = [
+    "price_volatility",
     "owner_occupier",
     "private_landlord",
     "institution",
+    "owner_occupier_value",
+    "private_landlord_value",
+    "institution_value",
+    "owner_occupier_stock",
+    "private_landlord_stock",
+    "institution_stock",
+    "household_net_worth_gini",
 ]
+METRICS = PERCENT_METRICS + POINT_METRICS
 SHARES = {
     "owner_occupier_share": "owner_occupier",
     "landlord_share": "private_landlord",
     "institution_share": "institution",
+}
+VALUE_SHARES = {
+    "owner_occupier_value_share": "owner_occupier_value",
+    "landlord_value_share": "private_landlord_value",
+    "institution_value_share": "institution_value",
+}
+STOCK_SHARES = {
+    "owner_occupier_ownership_share": "owner_occupier_stock",
+    "landlord_ownership_share": "private_landlord_stock",
+    "institutional_ownership_share": "institution_stock",
+}
+LEVELS = {
+    "total_household_net_worth": "total_household_net_worth",
+    "household_net_worth_gini": "household_net_worth_gini",
 }
 
 # Simulation
 
 
 def rolling_metrics(data):
-    """Trailing 12-month price, rent, and winning-bidder shares."""
+    """Trailing 12-month price, rent, volatility, wealth, and ownership/winner shares."""
 
     volume = data["transaction_volume"].fillna(0.0)
 
@@ -67,10 +97,17 @@ def rolling_metrics(data):
     result = pd.DataFrame({"month": data["month"]})
 
     transaction_value = data["avg_sale_price"].fillna(0.0) * volume
+    rolling_value = transaction_value.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum()
+    rolling_value = rolling_value.where(rolling_value > 0)
 
     result["sale_price"] = (
         transaction_value.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum() / rolling_volume
     )
+
+    log_returns = np.log(result["sale_price"] / result["sale_price"].shift(1))
+    result["price_volatility"] = log_returns.rolling(
+        ROLLING_WINDOW, min_periods=ROLLING_WINDOW
+    ).std()
 
     result["rent"] = data["avg_rent"].rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).mean()
 
@@ -80,16 +117,31 @@ def rolling_metrics(data):
             winner_count.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum() / rolling_volume
         )
 
+    for source, target in VALUE_SHARES.items():
+        winner_value = data[source].fillna(0.0) * transaction_value
+        result[target] = (
+            winner_value.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum() / rolling_value
+        )
+
+    for source, target in STOCK_SHARES.items():
+        result[target] = data[source].rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).mean()
+
+    for source, target in LEVELS.items():
+        result[target] = data[source].rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).mean()
+
     return result
 
 
-def run_model(seed, policy, initial=None):
-    """Run one model and retain the metrics used in the figure."""
+def run_model(seed, policy, initial=None, initial_macro=None):
+    """Run one model with matched pre-shock credit and macro state."""
     config = Config()
 
     if initial is not None:
         credit = config.credit.model_copy(update=initial)
         config = config.model_copy(update={"credit": credit})
+    if initial_macro is not None:
+        macro = config.macro.model_copy(update={"initial_state": initial_macro})
+        config = config.model_copy(update={"macro": macro})
 
     sim = config.sim.model_copy(update={"seed": seed, "n_steps": TOTAL_STEPS})
     config = config.model_copy(update={"sim": sim})
@@ -107,8 +159,9 @@ def run_policy_seed(args):
     seed, policy_name = args
     policy = EXPERIMENTS[policy_name](step=SHOCK_STEP)
     initial = getattr(policy, "initial", None)
-    baseline = run_model(seed, NoPolicy(), initial=initial)
-    shocked = run_model(seed, policy, initial=initial)
+    initial_macro = getattr(policy, "initial_macro", None)
+    baseline = run_model(seed, NoPolicy(), initial=initial, initial_macro=initial_macro)
+    shocked = run_model(seed, policy, initial=initial, initial_macro=initial_macro)
     paired = baseline.merge(shocked, on="month", suffixes=("_base", "_shock"))
     response = pd.DataFrame(
         {
@@ -118,9 +171,9 @@ def run_policy_seed(args):
         }
     )
 
-    for metric in ("sale_price", "rent"):
+    for metric in PERCENT_METRICS:
         response[metric] = 100 * (paired[f"{metric}_shock"] / paired[f"{metric}_base"] - 1)
-    for metric in ("owner_occupier", "private_landlord", "institution"):
+    for metric in POINT_METRICS:
         response[metric] = 100 * (paired[f"{metric}_shock"] - paired[f"{metric}_base"])
 
     return response[response["event_month"].between(-PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS)]
@@ -252,7 +305,7 @@ def main():
     else:
         items = [(s, p) for s in range(1, N_RUNS + 1) for p in POLICIES_TO_RUN]
         print(
-            f"Running {len(items)} items ({N_RUNS} seeds \u00d7 {len(POLICIES_TO_RUN)} policies) on {min(WORKERS, len(items))} workers"
+            f"Running {len(items)} items ({N_RUNS} seeds × {len(POLICIES_TO_RUN)} policies) on {min(WORKERS, len(items))} workers"
         )
         with ProcessPoolExecutor(max_workers=min(WORKERS, len(items))) as executor:
             futures = {executor.submit(run_policy_seed, item): item for item in items}
