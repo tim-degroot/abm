@@ -1,8 +1,8 @@
 """
 Paired credit-shock analysis wrapper.
 
-Runs the housing ABM under a credit-shock policy and its matched baseline across
-N_RUNS replicates, then saves one response figure per policy to results/credit_shocks/.
+Runs the housing ABM under a policy and its matched baseline across N_RUNS
+replicates, then saves response figures to results/policy_analysis/.
 """
 
 import argparse
@@ -17,81 +17,69 @@ from tqdm import tqdm
 from code.settings.config import Config
 from code.core.model import HousingModel
 from code.settings.policies import EXPERIMENTS, NoPolicy
+from code.settings.policy_config import (
+    N_RUNS,
+    SHOCK_STEP,
+    PRE_SHOCK_MONTHS,
+    POST_SHOCK_MONTHS,
+    ROLLING_WINDOW,
+    WORKERS,
+    POLICIES_TO_RUN,
+)
 
 plt.switch_backend("Agg")  # for headless servers
 
-# Configuration
-
-N_RUNS = 20
-SHOCK_STEP = 240
-PRE_SHOCK_MONTHS = 60
-POST_SHOCK_MONTHS = 120
-ROLLING_WINDOW = 12
-WORKERS = 16
-
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "results" / "policy_analysis"
-
-POLICIES_TO_RUN = [
-    "rate-up",
-    "rate-down",
-    "ltv-tighten",
-    "ltv-loosen",
-    "recession-easing-crunch",
-    "boom-credit-expansion",
-    "recession-credit-crunch",
-]
-
 TOTAL_STEPS = SHOCK_STEP + POST_SHOCK_MONTHS
-# Extended responses mirror the scenario questions: prices, volatility, composition, and wealth.
-PERCENT_METRICS = [
+
+# Level variables are percent responses; shares, volatility, and Gini are point changes.
+PERCENT_RESPONSE_METRICS = [
     "sale_price",
     "rent",
     "avg_household_net_worth",
 ]
-POINT_METRICS = [
+POINT_RESPONSE_METRICS = [
     "price_volatility",
-    "owner_occupier",
-    "private_landlord",
-    "institution",
-    "owner_occupier_value",
-    "private_landlord_value",
-    "institution_value",
-    "owner_occupier_stock",
-    "private_landlord_stock",
-    "institution_stock",
     "household_net_worth_gini",
 ]
-METRICS = PERCENT_METRICS + POINT_METRICS
-SHARES = {
-    "owner_occupier_share": "owner_occupier",
-    "landlord_share": "private_landlord",
-    "institution_share": "institution",
+
+# Marginal-pricer proxy: current reporters classify the winning buyer by count/value.
+MARGINAL_PRICER_COUNT_SHARES = {
+    "owner_occupier_share": "owner_occupier_marginal_count_share",
+    "landlord_share": "private_landlord_marginal_count_share",
+    "institution_share": "institution_marginal_count_share",
 }
-VALUE_SHARES = {
-    "owner_occupier_value_share": "owner_occupier_value",
-    "landlord_value_share": "private_landlord_value",
-    "institution_value_share": "institution_value",
+MARGINAL_PRICER_VALUE_SHARES = {
+    "owner_occupier_value_share": "owner_occupier_marginal_value_share",
+    "landlord_value_share": "private_landlord_marginal_value_share",
+    "institution_value_share": "institution_marginal_value_share",
 }
 STOCK_SHARES = {
-    "owner_occupier_ownership_share": "owner_occupier_stock",
-    "landlord_ownership_share": "private_landlord_stock",
-    "institutional_ownership_share": "institution_stock",
+    "owner_occupier_ownership_share": "owner_occupier_stock_share",
+    "landlord_ownership_share": "private_landlord_stock_share",
+    "institutional_ownership_share": "institution_stock_share",
 }
 LEVELS = {
-    "total_household_net_worth": "total_household_net_worth",
+    "avg_household_net_worth": "avg_household_net_worth",
     "household_net_worth_gini": "household_net_worth_gini",
 }
+
+SHARE_RESPONSE_METRICS = (
+    list(MARGINAL_PRICER_COUNT_SHARES.values())
+    + list(MARGINAL_PRICER_VALUE_SHARES.values())
+    + list(STOCK_SHARES.values())
+)
+POINT_METRICS = POINT_RESPONSE_METRICS + SHARE_RESPONSE_METRICS
+METRICS = PERCENT_RESPONSE_METRICS + POINT_METRICS
 
 # Simulation
 
 
 def rolling_metrics(data):
-    """Trailing 12-month price, rent, volatility, wealth, and ownership/winner shares."""
+    """Trailing-window prices, volatility, wealth, stock, and marginal-pricer proxies."""
 
     volume = data["transaction_volume"].fillna(0.0)
-
     rolling_volume = volume.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum()
-
     rolling_volume = rolling_volume.where(rolling_volume > 0)
 
     result = pd.DataFrame({"month": data["month"]})
@@ -111,16 +99,18 @@ def rolling_metrics(data):
 
     result["rent"] = data["avg_rent"].rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).mean()
 
-    for source, target in SHARES.items():
-        winner_count = data[source].fillna(0.0) * volume
+    for source, target in MARGINAL_PRICER_COUNT_SHARES.items():
+        marginal_count = data[source].fillna(0.0) * volume
         result[target] = (
-            winner_count.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum() / rolling_volume
+            marginal_count.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum()
+            / rolling_volume
         )
 
-    for source, target in VALUE_SHARES.items():
-        winner_value = data[source].fillna(0.0) * transaction_value
+    for source, target in MARGINAL_PRICER_VALUE_SHARES.items():
+        marginal_value = data[source].fillna(0.0) * transaction_value
         result[target] = (
-            winner_value.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum() / rolling_value
+            marginal_value.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum()
+            / rolling_value
         )
 
     for source, target in STOCK_SHARES.items():
@@ -171,7 +161,7 @@ def run_policy_seed(args):
         }
     )
 
-    for metric in PERCENT_METRICS:
+    for metric in PERCENT_RESPONSE_METRICS:
         response[metric] = 100 * (paired[f"{metric}_shock"] / paired[f"{metric}_base"] - 1)
     for metric in POINT_METRICS:
         response[metric] = 100 * (paired[f"{metric}_shock"] - paired[f"{metric}_base"])
@@ -223,10 +213,10 @@ def plot_policy(policy_name, summary):
     plot_band(axes[1], "rent")
     axes[1].set_ylabel("Rent response (%)")
 
-    plot_band(axes[2], "owner_occupier", "Owner-occupier", 0.12)
-    plot_band(axes[2], "private_landlord", "Private landlord", 0.12)
-    plot_band(axes[2], "institution", "Institution", 0.12)
-    axes[2].set_ylabel("Winner-share response (pp)")
+    plot_band(axes[2], "owner_occupier_marginal_count_share", "Owner-occupier", 0.12)
+    plot_band(axes[2], "private_landlord_marginal_count_share", "Private landlord", 0.12)
+    plot_band(axes[2], "institution_marginal_count_share", "Institution", 0.12)
+    axes[2].set_ylabel("Marginal-pricer proxy response (pp)")
     axes[2].set_xlabel("Months relative to permanent policy shift")
     axes[2].legend()
 
@@ -245,16 +235,16 @@ def plot_policy(policy_name, summary):
 
 
 def plot_comparison(policy_names, summary):
-    """N×1 grid comparing winner-share responses across policies."""
+    """N×1 grid comparing marginal-pricer proxy responses across policies."""
     n_policies = len(policy_names)
     fig, axes = plt.subplots(n_policies, 1, figsize=(9, 3 * n_policies + 1), sharex=True)
     if n_policies == 1:
         axes = [axes]
 
     metrics = {
-        "owner_occupier": "Owner-occupier",
-        "private_landlord": "Private landlord",
-        "institution": "Institution",
+        "owner_occupier_marginal_count_share": "Owner-occupier",
+        "private_landlord_marginal_count_share": "Private landlord",
+        "institution_marginal_count_share": "Institution",
     }
 
     for ax, policy in zip(axes, policy_names):
@@ -274,14 +264,14 @@ def plot_comparison(policy_names, summary):
         ax.axhline(0, color="black", linewidth=0.8)
         ax.axvline(0, color="black", linewidth=0.8, linestyle="--")
         ax.set_xlim(-PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS)
-        ax.set_ylabel("Winner-share response (pp)")
+        ax.set_ylabel("Marginal-pricer proxy response (pp)")
         ax.set_title(policy.replace("-", " ").title())
         ax.grid(alpha=0.25)
         ax.legend()
 
     axes[-1].set_xlabel("Months relative to permanent policy shift")
     fig.tight_layout()
-    path = OUTPUT_DIR / "winner_share_comparison.png"
+    path = OUTPUT_DIR / "marginal_pricer_comparison.png"
     fig.savefig(path, dpi=300)
     plt.close(fig)
     print(f"Saved {path}")

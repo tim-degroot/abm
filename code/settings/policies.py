@@ -5,7 +5,17 @@ Usage:
 """
 
 from __future__ import annotations
+
 from code.core.credit import CreditEnvironment
+from code.settings.policy_config import (
+    HIGH_RATE,
+    LOW_RATE,
+    OO_LTV_HIGH,
+    OO_LTV_LOW,
+    OO_LTV_LOOSE,
+    OO_LTV_TIGHT,
+    SCENARIOS,
+)
 
 
 class NoPolicy:
@@ -50,7 +60,7 @@ class _ScheduledCreditShock(NoPolicy):
 
 
 class _ScheduledCreditMacroShock(_ScheduledCreditShock):
-    """Pair a credit package with a macro-regime shift for scenario experiments."""
+    """Bundle credit and macro shifts to test realistic scenario packages."""
 
     def __init__(
         self,
@@ -75,148 +85,81 @@ class _ScheduledCreditMacroShock(_ScheduledCreditShock):
         super().on_step_start(model)
 
 
-def RateIncrease(step=240, rate=0.08 / 12):
+# Single-channel Gamal shocks are retained as validation experiments.
+def RateIncrease(step=240, rate=HIGH_RATE):
     """Gamal interest-rate rise: 3.7% to 8% annually."""
     return _ScheduledCreditShock(
         step,
         {"mortgage_rate": rate, "btl_funding_rate": rate, "inst_funding_rate": rate},
         label="rate 3.7% -> 8% annually",
         initial={
-            "mortgage_rate": 0.037 / 12,
-            "btl_funding_rate": 0.037 / 12,
-            "inst_funding_rate": 0.037 / 12,
+            "mortgage_rate": LOW_RATE,
+            "btl_funding_rate": LOW_RATE,
+            "inst_funding_rate": LOW_RATE,
         },
     )
 
 
-def RateDecrease(step=240, rate=0.037 / 12):
+def RateDecrease(step=240, rate=LOW_RATE):
     """Gamal interest-rate decline: 8% to 3.7% annually."""
     return _ScheduledCreditShock(
         step,
         {"mortgage_rate": rate, "btl_funding_rate": rate, "inst_funding_rate": rate},
         label="rate 8% -> 3.7% annually",
         initial={
-            "mortgage_rate": 0.08 / 12,
-            "btl_funding_rate": 0.08 / 12,
-            "inst_funding_rate": 0.08 / 12,
+            "mortgage_rate": HIGH_RATE,
+            "btl_funding_rate": HIGH_RATE,
+            "inst_funding_rate": HIGH_RATE,
         },
     )
 
 
-def LTVTighten(step=240, ltv=0.69, btl_ltv=0.69, inst_ltv=0.69):
+def LTVTighten(step=240, ltv=OO_LTV_TIGHT, btl_ltv=OO_LTV_TIGHT, inst_ltv=OO_LTV_TIGHT):
     """Gamal LTV decline: 90% to 69%."""
     return _ScheduledCreditShock(
         step,
         {"ltv_limit": ltv, "btl_ltv": btl_ltv, "inst_ltv": inst_ltv},
         label="LTV 90% -> 69%",
-        initial={"ltv_limit": 0.90, "btl_ltv": 0.90, "inst_ltv": 0.90},
+        initial={"ltv_limit": OO_LTV_HIGH, "btl_ltv": OO_LTV_HIGH, "inst_ltv": OO_LTV_HIGH},
     )
 
 
-def LTVLoosen(step=240, ltv=0.74, btl_ltv=0.74, inst_ltv=0.74):
+def LTVLoosen(step=240, ltv=OO_LTV_LOOSE, btl_ltv=OO_LTV_LOOSE, inst_ltv=OO_LTV_LOOSE):
     """Gamal LTV rise: 60% to 74%."""
     return _ScheduledCreditShock(
         step,
         {"ltv_limit": ltv, "btl_ltv": btl_ltv, "inst_ltv": inst_ltv},
         label="LTV 60% -> 74%",
-        initial={"ltv_limit": 0.60, "btl_ltv": 0.60, "inst_ltv": 0.60},
+        initial={"ltv_limit": OO_LTV_LOW, "btl_ltv": OO_LTV_LOW, "inst_ltv": OO_LTV_LOW},
     )
 
 
-# Scenario anchors: Gamal shocks + BTL spread/LTV from Gamal's UK BTL discussion.
-LOW_RATE = 0.037 / 12  # Gamal rate
-HIGH_RATE = 0.08 / 12  # Gamal shock
-BTL_RATE_SPREAD = 0.0038 / 12  # Gamal BTL spread
-OO_LTV_TIGHT = 0.69  # Gamal median low
-OO_LTV_HIGH = 0.90  # Gamal band
-OO_LTV_LOW = 0.60  # Gamal band
-OO_LTV_LOOSE = 0.74  # Gamal median high
-BTL_LTV_TIGHT = 0.60  # Gamal BTL deposit
-BTL_LTV_LOOSE = 0.75  # Gamal BTL deposit
-INST_LTV_SCENARIO = 0.60  # model default
-DTI_TIGHT = 0.33  # Gamal affordability
-DTI_LOOSE = 0.40  # model default
+def _macro_scenario(name: str, step: int):
+    """Build one bundled macro-credit scenario from policy_config.py."""
+    scenario = SCENARIOS[name]
+    return _ScheduledCreditMacroShock(
+        step,
+        scenario["overrides"],
+        label=scenario["label"],
+        initial=scenario["initial"],
+        macro=scenario["macro"],
+        initial_macro=scenario.get("initial_macro", "Neutral"),
+    )
 
 
 def RecessionEasingCrunch(step=240):
-    """Rates ease in recession, but underwriting tightens; tests offsetting channels."""
-    return _ScheduledCreditMacroShock(
-        step,
-        {
-            "mortgage_rate": LOW_RATE,
-            "btl_funding_rate": LOW_RATE + BTL_RATE_SPREAD,
-            "inst_funding_rate": LOW_RATE,
-            "ltv_limit": OO_LTV_TIGHT,
-            "btl_ltv": BTL_LTV_TIGHT,
-            "inst_ltv": INST_LTV_SCENARIO,
-            "dti_limit": DTI_TIGHT,
-        },
-        label="recession + rate cut, LTV/DTI crunch",
-        initial={
-            "mortgage_rate": HIGH_RATE,
-            "btl_funding_rate": HIGH_RATE + BTL_RATE_SPREAD,
-            "inst_funding_rate": HIGH_RATE,
-            "ltv_limit": OO_LTV_HIGH,
-            "btl_ltv": BTL_LTV_LOOSE,
-            "inst_ltv": INST_LTV_SCENARIO,
-            "dti_limit": DTI_LOOSE,
-        },
-        macro="Recession",
-    )
+    """Rate cuts meet tighter underwriting in recession; offsetting-channel test."""
+    return _macro_scenario("recession-easing-crunch", step)
 
 
 def BoomCreditExpansion(step=240):
-    """Boom plus cheaper funding and looser constraints; tests a full credit upswing."""
-    return _ScheduledCreditMacroShock(
-        step,
-        {
-            "mortgage_rate": LOW_RATE,
-            "btl_funding_rate": LOW_RATE + BTL_RATE_SPREAD,
-            "inst_funding_rate": LOW_RATE,
-            "ltv_limit": OO_LTV_LOOSE,
-            "btl_ltv": BTL_LTV_LOOSE,
-            "inst_ltv": INST_LTV_SCENARIO,
-            "dti_limit": DTI_LOOSE,
-        },
-        label="boom + rate cut, LTV/DTI loosening",
-        initial={
-            "mortgage_rate": HIGH_RATE,
-            "btl_funding_rate": HIGH_RATE + BTL_RATE_SPREAD,
-            "inst_funding_rate": HIGH_RATE,
-            "ltv_limit": OO_LTV_LOW,
-            "btl_ltv": BTL_LTV_TIGHT,
-            "inst_ltv": INST_LTV_SCENARIO,
-            "dti_limit": DTI_TIGHT,
-        },
-        macro="Boom",
-    )
+    """Boom, cheaper funding, and looser constraints; full credit-upswing test."""
+    return _macro_scenario("boom-credit-expansion", step)
 
 
 def RecessionCreditCrunch(step=240):
-    """Recession plus tighter credit across rates, leverage, and DTI; severe stress."""
-    return _ScheduledCreditMacroShock(
-        step,
-        {
-            "mortgage_rate": HIGH_RATE,
-            "btl_funding_rate": HIGH_RATE + BTL_RATE_SPREAD,
-            "inst_funding_rate": HIGH_RATE,
-            "ltv_limit": OO_LTV_TIGHT,
-            "btl_ltv": BTL_LTV_TIGHT,
-            "inst_ltv": INST_LTV_SCENARIO,
-            "dti_limit": DTI_TIGHT,
-        },
-        label="recession + rate rise, LTV/DTI crunch",
-        initial={
-            "mortgage_rate": LOW_RATE,
-            "btl_funding_rate": LOW_RATE + BTL_RATE_SPREAD,
-            "inst_funding_rate": LOW_RATE,
-            "ltv_limit": OO_LTV_HIGH,
-            "btl_ltv": BTL_LTV_LOOSE,
-            "inst_ltv": INST_LTV_SCENARIO,
-            "dti_limit": DTI_LOOSE,
-        },
-        macro="Recession",
-    )
+    """Recession plus tighter rates, leverage, and DTI; severe stress test."""
+    return _macro_scenario("recession-credit-crunch", step)
 
 
 def CreditTightening(step=240):
