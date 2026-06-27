@@ -26,6 +26,20 @@ def risk_adjusted_growth(
     return expected_growth - risk_loading * expected_volatility
 
 
+def _logit_probs(values: Mapping[Hashable, float]):
+    """Return (labels, probs) from a value mapping."""
+    labels = list(values.keys())
+    vals = np.array(list(values.values()), dtype=float)
+    finite = np.isfinite(vals)
+    if not np.any(finite):
+        return labels, np.ones(len(labels)) / len(labels)
+    shifted = np.where(finite, (vals - vals[finite].max()), -np.inf)
+    exp_v = np.where(finite, np.exp(np.clip(shifted, -500, 0)), 0.0)
+    total = exp_v.sum()
+    probs = exp_v / total if total > 0 else finite / finite.sum()
+    return labels, probs
+
+
 def logit_choice(
     values: Mapping[Hashable, float],
     rng,
@@ -34,35 +48,18 @@ def logit_choice(
 
     Infeasible options carry value -inf and receive zero probability.
     """
-    labels = list(values.keys())
-    vals = np.array(list(values.values()), dtype=float)
-
-    finite = np.isfinite(vals)
-    if not np.any(finite):
+    labels, probs = _logit_probs(values)
+    if not np.any(np.isfinite(list(values.values()))):
         for fallback in ("hold", "none", "stay", "do_nothing"):
             if fallback in values:
                 return fallback
         return rng.choice(labels)
-
-    shifted = np.where(finite, (vals - vals[finite].max()), -np.inf)
-    exp_v = np.where(finite, np.exp(np.clip(shifted, -500, 0)), 0.0)
-    total = exp_v.sum()
-    probs = exp_v / total if total > 0 else finite / finite.sum()
     return rng.choice(labels, p=probs)
 
 
 def logit_probabilities(values: Mapping[Hashable, float]):
     """Return {label: probability} for diagnostics / property selection weighting."""
-    labels = list(values.keys())
-    vals = np.array(list(values.values()), dtype=float)
-    finite = np.isfinite(vals)
-    if not np.any(finite):
-        u = 1.0 / len(labels)
-        return {k: u for k in labels}
-    shifted = np.where(finite, (vals - vals[finite].max()), -np.inf)
-    exp_v = np.where(finite, np.exp(np.clip(shifted, -500, 0)), 0.0)
-    total = exp_v.sum()
-    probs = exp_v / total if total > 0 else finite / finite.sum()
+    labels, probs = _logit_probs(values)
     return {k: float(p) for k, p in zip(labels, probs)}
 
 

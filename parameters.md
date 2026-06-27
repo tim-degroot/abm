@@ -8,7 +8,7 @@ Direct analogues between this model and Gamal, Elsenbroich, Gilbert, Heppenstall
 | ------------- | ------------------------- | ------------------- | ----------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Mortgage rate | `credit.mortgage_rate`    | 0.00308 (≈3.7% APR) | 3.7%        | Bank of England (2023a) | Direct match. Gamal labels this `interest-rate (I_t)`.                                                                                                   |
 | LTV limit     | `credit.ltv_limit`        | 0.90                | 90%         | Bank of England (2023a) | Direct match. Gamal labels this `LTV (LTV_t)`.                                                                                                           |
-| Loan term     | `credit.loan_term_months` | 300 (25 yrs)        | 25 years    | Author assumption       | Direct match. Gamal labels this `mortgage-duration`.                                                                                                     |
+| Loan term     | `credit.loan_term_months` | 240 (20 yrs)        | 25 years    | Author assumption       | Direct match. Gamal labels this `mortgage-duration`.                                                                                                     |
 | Income mean   | `agent_init.income_mean`  | 36,700              | £30,000     | ONS (2023a)             | Updated. Gamal used a gamma(α=2) truncated to £15K–£45K with mean £30K citing ONS (2023a). We use the direct ONS median — see Table 2.                   |
 | DTI limit     | `credit.dti_limit`        | 0.40                | 0.33 (α)    | Author assumption       | Updated. Gamal's `affordability (α)` is an author assumption with no external source cited. We use a value grounded in UK lender practice — see Table 2. |
 
@@ -24,7 +24,7 @@ Direct analogues between this model and Gamal, Elsenbroich, Gilbert, Heppenstall
 | Income dispersion          | `agent_init.income_sigma`                      | 0.5                 | ONS income distribution data. A lognormal with σ=0.5 produces a Gini coefficient consistent with UK post-tax income inequality. Author assumption for the parametric form.                                                                                                                                                                                                                                                                                                                                                                              |
 | DTI limit                  | `credit.dti_limit`                             | 0.40                | CeMAP mortgage underwriting guidance: "Lenders typically prefer a DTI below 40%… A typical maximum DTI accepted by UK lenders is 45% for most residential mortgages." [Source](https://cemap123.co.uk/mortgage-underwriting-cemap-students/). Also consistent with FCA post-MMR responsible lending rules.                                                                                                                                                                                                                                              |
 | Base house price           | `property_init.init_base_price`                | 200,000             | Office for National Statistics (2025). *UK House Price Index: December 2024*. Terraced house UK average: £223,808; UK average excluding London: ~£226,000. [Link](https://www.gov.uk/government/statistics/uk-house-price-index-for-december-2024/uk-house-price-index-summary-december-2024). Our 200K reflects a non-London/South East calibration.                                                                                                                                                                                                   |
-| Price-quality sensitivity  | `property_init.init_price_quality_sensitivity` | 20,000              | Calibrated so that ~95% of properties fall in the £160K–£240K range at ±2σ quality, covering the regional UK spread from North East (£161K) to East Midlands (£242K). Source: ONS UK HPI regional breakdown (same release as above).                                                                                                                                                                                                                                                                                                                    |
+| Price-quality sensitivity  | `property_init.init_price_quality_sensitivity` | 25,000              | Calibrated so that ~95% of properties fall in the £160K–£240K range at ±2σ quality, covering the regional UK spread from North East (£161K) to East Midlands (£242K). Source: ONS UK HPI regional breakdown (same release as above).                                                                                                                                                                                                                                                                                                                    |
 | Dwellings:households ratio | `sim.n_properties` / `sim.n_households`        | ~1.25:1             | MHCLG (2025). *Dwelling Stock Estimates, England: 31 March 2024*: 25.6M dwellings. [Link](https://www.gov.uk/government/statistics/dwelling-stock-estimates-in-england-2024/dwelling-stock-estimates-england-31-march-2024). ONS (2025). *Families and Households, UK: 2024*: 28.6M households. [Link](https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/families/bulletins/familiesandhouseholds/2024). Raw ratio ~1.07:1; adjusted upward because our model excludes social housing (~16% of stock) and needs BTL surplus. |
 
 ---
@@ -37,9 +37,9 @@ Parameters with no external source. Labelled "Author assumption" following the c
 
 | Parameter    | Config path          | Default | Rationale                                                                                           |
 | ------------ | -------------------- | ------- | --------------------------------------------------------------------------------------------------- |
-| Households   | `sim.n_households`   | 1000    | Model scale. Chosen for tractability across 10 stochastic seeds × 8192 Sobol samples.               |
+| Households   | `sim.n_households`   | 500     | Model scale. Chosen for tractability across 10 stochastic seeds × 8192 Sobol samples.               |
 | Institutions | `sim.n_institutions` | 5       | Arbitrary; enough to avoid single-institution monopoly without fragmenting the BTL market.          |
-| Steps        | `sim.n_steps`        | 240     | 20 years at monthly resolution. Sufficient for shock experiments (Gamal uses 100 years post-shock). |
+| Steps        | `sim.n_steps`        | 1200    | 100 years at monthly resolution. Sufficient for shock experiments (Gamal uses 100 years post-shock). |
 | Seed         | `sim.seed`           | 42      | RNG seed for reproducibility.                                                                       |
 
 ### Spatial
@@ -55,7 +55,7 @@ Parameters with no external source. Labelled "Author assumption" following the c
 | ---------------------- | ------------------------------------ | ------- | ------------------------------------------------------------------------------------------ |
 | Zone quality SD        | `property_init.zone_quality_sd`      | 0.8     | Creates meaningful between-zone quality variation (~0.8σ between zones).                   |
 | Property residual SD   | `property_init.property_residual_sd` | 0.3     | Within-zone quality variation; ~0.3σ residual after zone mean.                             |
-| Initial ownership prob | `property_init.init_ownership_prob`  | 0.90    | 90% of households start as owner-occupiers; 10% enter as renters, creating natural demand. |
+| Initial ownership prob | `property_init.init_ownership_prob`  | 0.80    | 80% of households start as owner-occupiers; 20% enter as renters, creating natural demand. |
 
 ### Agent initialisation
 
@@ -64,7 +64,7 @@ Parameters with no external source. Labelled "Author assumption" following the c
 | Wealth multiplier range       | `agent_init.wealth_income_mult_low/high` | [0.5, 25.0]           | Cash = income × multiplier. Produces wide wealth distribution. Matches UK wealth inequality pattern.                    |
 | Initial LTV distribution      | `agent_init.ltv_dist_low/high`           | [0.70, 0.85]          | Random initial LTV for legacy mortgages, capped at `credit.ltv_limit`.                                                  |
 | Risk aversion params          | `agent_init.risk_aversion_mu/sigma`      | μ=1.0, σ=0.5          | Lognormal distribution of household risk aversion.                                                                      |
-| Institutional cash            | `agent_init.inst_cash_low/high`          | [15M, 100M]           | Set so 5 institutions can absorb 350 properties at 40% deposit (~5.6M/inst at 1000 HH scale). Scales with n_properties. |
+| Institutional cash            | `agent_init.inst_cash_low/high`          | [7.5M, 50M]           | Set so 5 institutions can absorb 350 properties at 40% deposit (~5.6M/inst at 500 HH scale). Scales with n_properties. |
 | Institutional required return | `agent_init.inst_required_return`        | 0.0015 (≈1.8% annual) | Minimum monthly return on BTL properties.                                                                               |
 | Loss aversion                 | `agent_init.loss_aversion`               | 1.30                  | Kahneman & Tversky (1979) endowment effect parameter.                                                                   |
 
@@ -82,8 +82,8 @@ Parameters with no external source. Labelled "Author assumption" following the c
 | Parameter                | Config path                     | Default       | Rationale                                                                             |
 | ------------------------ | ------------------------------- | ------------- | ------------------------------------------------------------------------------------- |
 | Rent quality sensitivity | `valuation.quality_sensitivity` | 0.3           | Rent = base_rent × (1 + 0.3 × q), so a +1σ quality property commands 30% higher rent. |
-| Quality value scale      | `valuation.quality_value_scale` | 200           | Consumption value of quality increment for owner-occupier WTP.                        |
-| Base housing value       | `valuation.base_housing_value`  | 700 (£/month) | Monthly consumption value of a median-quality home.                                   |
+| Quality value scale      | `valuation.quality_value_scale` | 250           | Consumption value of quality increment for owner-occupier WTP.                        |
+| Base housing value       | `valuation.base_housing_value`  | 800 (£/month) | Monthly consumption value of a median-quality home.                                   |
 | Horizon                  | `valuation.horizon`             | 480 (40 yrs)  | DCF horizon for WTP calculations.                                                     |
 
 ### Expectations
@@ -91,7 +91,7 @@ Parameters with no external source. Labelled "Author assumption" following the c
 | Parameter                 | Config path                            | Default                  | Rationale                                                                                    |
 | ------------------------- | -------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------- |
 | EWMA smoothing            | `expectations.smoothing`               | 0.90                     | High persistence; expectations adjust slowly to new signals.                                 |
-| Signal window             | `expectations.signal_window`           | 12 (months)              | Lookback for OLS growth estimates and volatility.                                            |
+| Signal window             | `expectations.signal_window`           | 18 (months)              | Lookback for OLS growth estimates and volatility.                                            |
 | Initial price/rent growth | `expectations.init_price/rent_growth`  | 0.001667 (≈2% annual)    | Calibrated to ~2% annual trend growth, consistent with long-run UK house price appreciation. |
 | Initial volatility        | `expectations.init_price/rent_vol`     | 0.005 (≈1.7% monthly σ)  | Baseline expected volatility.                                                                |
 | Idiosyncratic noise SD    | `expectations.inst/household_noise_sd` | Inst: 0.0003, HH: 0.0006 | Small noise added to expectations each period; households noisier than institutions.         |

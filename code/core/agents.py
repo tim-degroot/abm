@@ -224,11 +224,7 @@ class HouseholdAgent(_BalanceSheetMixin, mesa.Agent):
                     )
                 v_hold = self.btl_wtp(prop, rent)
                 reservation_price = self.reservation_price(prop, v_hold)
-            v_sell = reservation_price - self.loss_aversion * max(
-                prop.purchase_anchor_price - reservation_price, 0
-            )
-
-            values = {"hold": 0.0, "sell": v_sell}
+            values = {"hold": v_hold, "sell": reservation_price}
 
             choice = logit_choice(values, rng)
 

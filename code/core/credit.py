@@ -9,8 +9,10 @@ from code.settings.config import CreditConfig
 class CreditEnvironment:
     """Mutable snapshot of credit conditions; policies may replace it mid-run."""
 
+    _default_cfg = CreditConfig()
+
     def __init__(self, **kwargs):
-        cfg = CreditConfig()
+        cfg = self._default_cfg
         self.mortgage_rate = kwargs.get("mortgage_rate", cfg.mortgage_rate)
         self.ltv_limit = kwargs.get("ltv_limit", cfg.ltv_limit)
         self.dti_limit = kwargs.get("dti_limit", cfg.dti_limit)

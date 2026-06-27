@@ -247,12 +247,13 @@ def _compute_sobol_indices(problem, response_name, Y, sa_cfg):
     Y = np.asarray(Y, dtype=float)
     nan_count = int(np.isnan(Y).sum())
     if nan_count > 0:
+        nan_frac = nan_count / len(Y)
+        if nan_frac > 0.5:
+            print(f"  {response_name}: {nan_count}/{len(Y)} NaN ({nan_frac:.0%}) — skipping")
+            return []
         print(f"  {response_name}: {nan_count}/{len(Y)} NaN — filling with 0")
         Y = np.nan_to_num(Y, nan=0.0)
 
-    # SALib's bootstrap crashes on near-constant output (e.g. when most
-    # runs failed and were filled with 0).  Skip instead of propagating
-    # the error — the user will see a gap in the results table.
     if np.nanvar(Y) < 1e-12 or np.allclose(Y, Y[0]):
         print(f"  {response_name}: near-constant output — skipping analysis")
         return []
