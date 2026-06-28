@@ -109,8 +109,7 @@ def rolling_metrics(data):
     for source, target in MARGINAL_PRICER_VALUE_SHARES.items():
         marginal_value = data[source].fillna(0.0) * transaction_value
         result[target] = (
-            marginal_value.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum()
-            / rolling_value
+            marginal_value.rolling(ROLLING_WINDOW, min_periods=ROLLING_WINDOW).sum() / rolling_value
         )
 
     for source, target in STOCK_SHARES.items():

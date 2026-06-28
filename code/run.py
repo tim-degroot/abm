@@ -35,7 +35,6 @@ def main():
     from code.settings.policies import EXPERIMENTS, NoPolicy
     from code.settings.metrics import collect_zone_metrics
 
-
     args = _parse_args(sys.argv[1:])
 
     cfg = Config()
@@ -106,8 +105,6 @@ def main():
         zone_out = os.path.join(_RESULTS_DIR, "zone_timeseries.csv")
         pd.DataFrame(zone_rows).to_csv(zone_out, index=False)
         print(f"Zone metrics written to: {zone_out}")
-
-
 
 
 if __name__ == "__main__":
