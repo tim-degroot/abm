@@ -191,92 +191,6 @@ def summarise(responses):
     return summary
 
 
-def plot_policy(policy_name, summary):
-    """Save one response figure for one policy."""
-    policy_data = summary[summary["policy"] == policy_name]
-    figure, axes = plt.subplots(3, 1, figsize=(9, 10), sharex=True)
-
-    def plot_band(axis, metric, label=None, alpha=0.2):
-        values = policy_data[policy_data["metric"] == metric].sort_values("event_month")
-        line = axis.plot(values["event_month"], values["mean"], label=label)[0]
-        axis.fill_between(
-            values["event_month"],
-            values["lower"],
-            values["upper"],
-            color=line.get_color(),
-            alpha=alpha,
-        )
-
-    plot_band(axes[0], "sale_price")
-    axes[0].set_ylabel("Sale price response (%)")
-
-    plot_band(axes[1], "rent")
-    axes[1].set_ylabel("Rent response (%)")
-
-    plot_band(axes[2], "owner_occupier_marginal_count_share", "Owner-occupier", 0.12)
-    plot_band(axes[2], "private_landlord_marginal_count_share", "Private landlord", 0.12)
-    plot_band(axes[2], "institution_marginal_count_share", "Institution", 0.12)
-    axes[2].set_ylabel("Marginal-pricer proxy response (pp)")
-    axes[2].set_xlabel("Months relative to permanent policy shift")
-    axes[2].legend()
-
-    for axis in axes:
-        axis.axhline(0, color="black", linewidth=0.8)
-        axis.axvline(0, color="black", linewidth=0.8, linestyle="--")
-        axis.set_xlim(-PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS)
-        axis.grid(alpha=0.25)
-
-    figure.suptitle(policy_name.replace("-", " ").title())
-    figure.tight_layout()
-
-    name = policy_name.replace("-", "_") + "_response"
-    figure.savefig(OUTPUT_DIR / f"{name}.png", dpi=300)
-    plt.close(figure)
-
-
-def plot_comparison(policy_names, summary):
-    """N×1 grid comparing marginal-pricer proxy responses across policies."""
-    n_policies = len(policy_names)
-    fig, axes = plt.subplots(n_policies, 1, figsize=(9, 3 * n_policies + 1), sharex=True)
-    if n_policies == 1:
-        axes = [axes]
-
-    metrics = {
-        "owner_occupier_marginal_count_share": "Owner-occupier",
-        "private_landlord_marginal_count_share": "Private landlord",
-        "institution_marginal_count_share": "Institution",
-    }
-
-    for ax, policy in zip(axes, policy_names):
-        policy_data = summary[summary["policy"] == policy]
-
-        for metric, label in metrics.items():
-            values = policy_data[policy_data["metric"] == metric].sort_values("event_month")
-            line = ax.plot(values["event_month"], values["mean"], label=label)[0]
-            ax.fill_between(
-                values["event_month"].to_numpy(),
-                values["lower"].to_numpy(),
-                values["upper"].to_numpy(),
-                color=line.get_color(),
-                alpha=0.12,
-            )
-
-        ax.axhline(0, color="black", linewidth=0.8)
-        ax.axvline(0, color="black", linewidth=0.8, linestyle="--")
-        ax.set_xlim(-PRE_SHOCK_MONTHS, POST_SHOCK_MONTHS)
-        ax.set_ylabel("Marginal-pricer proxy response (pp)")
-        ax.set_title(policy.replace("-", " ").title())
-        ax.grid(alpha=0.25)
-        ax.legend()
-
-    axes[-1].set_xlabel("Months relative to permanent policy shift")
-    fig.tight_layout()
-    path = OUTPUT_DIR / "marginal_pricer_comparison.png"
-    fig.savefig(path, dpi=300)
-    plt.close(fig)
-    print(f"Saved {path}")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Paired credit-shock analysis.")
     parser.add_argument(
@@ -312,10 +226,8 @@ def main():
         print(f"Saved results in {OUTPUT_DIR}/responses.csv")
 
     summary = summarise(responses)
-    for policy_name in POLICIES_TO_RUN:
-        plot_policy(policy_name, summary)
-        print(f"Saved plots for {policy_name} in {OUTPUT_DIR}")
-    plot_comparison(POLICIES_TO_RUN, summary)
+    summary.to_csv(OUTPUT_DIR / "summary.csv", index=False)
+    print(f"Summary written to {OUTPUT_DIR}/summary.csv")
 
 
 if __name__ == "__main__":

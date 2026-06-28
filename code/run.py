@@ -34,7 +34,7 @@ def main():
     from code.core.model import HousingModel
     from code.settings.policies import EXPERIMENTS, NoPolicy
     from code.settings.metrics import collect_zone_metrics
-    from code.plotting.plot_run import plot_summary
+
 
     args = _parse_args(sys.argv[1:])
 
@@ -107,9 +107,7 @@ def main():
         pd.DataFrame(zone_rows).to_csv(zone_out, index=False)
         print(f"Zone metrics written to: {zone_out}")
 
-    out_png = os.path.join(_RESULTS_DIR, "results_summary.png")
-    plot_summary(model.datacollector.get_model_vars_dataframe(), out_png)
-    print(f"Chart saved to: {out_png}")
+
 
 
 if __name__ == "__main__":
