@@ -8,6 +8,8 @@ This repository contains an agent-based model (ABM) of the housing market built 
 
 > **Core Research Question:** Can a model of boundedly rational, utility-maximising agents with heterogeneous financing, valuation, and information structures reproduce the dynamics typically attributed to behavioural housing ABMs, while providing a structural explanation of who sets prices and why?
 
+A detailed description of all model parameters, their calibration sources, and sensitivity ranges can be found in [`parameters.md`](parameters.md).
+
 ## Repository Structure
 
 ```text
@@ -15,13 +17,13 @@ This repository contains an agent-based model (ABM) of the housing market built 
 ├── code/                 # Core ABM package
 │   ├── core/             #   Model logic: agents, markets, credit, expectations
 │   ├── settings/         #   Config, metrics, policies, sensitivity config
-│   ├── sensitivity/      #   Sobol sensitivity analysis scripts
-│   ├── plotting/         #   Plotting utilities (policy analysis, run summary)
+│   ├── sensitivity/      #   Sobol global sensitivity analysis (generate / evaluate / aggregate)
+│   ├── plotting/         #   Jupyter notebooks for publication figures
 │   ├── test/             #   Unit and regression tests (unittest)
-│   ├── run.py            #   CLI entry point
+│   ├── run.py            #   CLI entry point for single model runs
 │   └── policy_analysis.py #   Multi-seed policy experiment runner
-├── results/              # Output figures, CSVs, and analysis plots
-├── parameters.md         # Detailed explanation of model parameters
+├── results/              # Output data, figures, and CSVs
+├── parameters.md         # Detailed parameter sources and calibration
 ├── pyproject.toml        # Dependency management via uv
 └── README.md
 
@@ -88,21 +90,28 @@ This produces `responses.csv` with all results, a response figure per experiment
 
 ## Sensitivity Analysis (Sobol)
 
-Three-stage Sobol global sensitivity analysis with stochastic replicates:
+Three-stage Sobol global sensitivity analysis with stochastic replicates across 10 model seeds:
 
 ```bash
 uv run -m code.sensitivity --generate                 # stage 1: Saltelli samples (once)
-uv run -m code.sensitivity --evaluate --model-seed 0  # stage 2: per seed
-uv run -m code.sensitivity --aggregate                # stage 3: Sobol indices from all seeds
+uv run -m code.sensitivity --evaluate --model-seed 0  # stage 2: per seed (repeat 0-9)
+uv run -m code.sensitivity --aggregate                # stage 3: Sobol indices across seeds
 
 ```
 
-The analysis is configured in `code/settings/sensitivity_config.yaml` — choose which parameters to vary, their bounds, and which response metrics to use. After aggregation, the 2×2 grid of first-order vs total-order indices can be plotted:
+The analysis is configured in `code/settings/sensitivity_config.yaml` — choose which parameters to vary (uniform/log-uniform/int), their bounds, and which response metrics to use. The `--aggregate` step computes Sobol indices independently per seed, then reports the mean ± 95% CI (using a t-distribution across seeds). This ensures error bars properly shrink as more stochastic replicates are added.
 
-```bash
-uv run -m code.sensitivity.analysis   # → results/sensitivity/global_sa.png
+## Figures
 
-```
+Publication-quality figures are generated from Jupyter notebooks in `code/plotting/`:
+
+| Notebook | Generates |
+|---|---|
+| `code/plotting/single_run.ipynb` | Single-run summary plots for model validation |
+| `code/plotting/policy_analysis.ipynb` | Policy response time series with confidence bands, winner-share comparisons |
+| `code/plotting/sensitivity.ipynb` | Sobol heatmap, S₁ vs Sₜ scatter, thematic bar charts for ownership, prices, and welfare |
+
+To regenerate all figures from existing results, open a notebook and run all cells. The notebooks read from `results/` and write high-resolution PNGs to `results/sensitivity/figs/` and `results/policy_analysis/`.
 
 ## High Performance Computing
 
