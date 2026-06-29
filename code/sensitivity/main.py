@@ -316,7 +316,8 @@ def plot_sobol(sobol_df, sa_cfg, out_dir):
 
 
 def cmd_aggregate(args):
-    """Average responses across seed replicates and compute Sobol indices."""
+    """For each stochastic replicate, compute Sobol indices;
+    then aggregate mean and confidence intervals across replicates."""
     sa_cfg = load_config()
     out_dir = sa_cfg["output"]["dir"]
 
@@ -325,22 +326,63 @@ def cmd_aggregate(args):
     param_names = [p["name"] for p in sa_cfg["parameters"]]
     response_names = [r["name"] for r in sa_cfg["responses"]]
 
-    # Average responses per sample_id across seeds
+    # Save averaged responses for reference
     avg_responses = combined.groupby("sample_id")[response_names].mean(skipna=True)
     param_cols = combined.groupby("sample_id")[param_names].first()
-
     avg_df = pd.concat([param_cols, avg_responses], axis=1)
     avg_path = os.path.join(out_dir, "responses_avg.csv")
     avg_df.to_csv(avg_path)
     print(f"Saved: {avg_path}")
 
-    # Compute Sobol indices on seed-averaged responses
+    # Compute Sobol indices per seed, then aggregate across seeds
     problem = build_problem(sa_cfg)
+
+    pattern = os.path.join(out_dir, "seed_*.csv")
+    seed_files = sorted(glob.glob(pattern))
+    print(f"Computing Sobol indices per seed ({len(seed_files)} seeds)...")
+
+    from scipy.stats import t as t_dist
+
+    all_seed_rows = []
+    for f in seed_files:
+        seed_df = pd.read_csv(f).sort_values("sample_id")
+        seed_rows = []
+        for r in sa_cfg["responses"]:
+            name = r["name"]
+            Y = seed_df[name].values
+            seed_rows.extend(_compute_sobol_indices(problem, name, Y, sa_cfg))
+        seed_label = os.path.basename(f).replace(".csv", "")
+        for row in seed_rows:
+            row["seed"] = seed_label
+        all_seed_rows.extend(seed_rows)
+
+    if not all_seed_rows:
+        print("No Sobol indices computed for any seed — nothing to aggregate.")
+        return
+
+    seed_sobol_df = pd.DataFrame(all_seed_rows)
+
+    # Aggregate across seeds: mean ± t_{0.975, n-1} × SEM
     sobol_rows = []
-    for r in sa_cfg["responses"]:
-        name = r["name"]
-        Y = avg_responses[name].values
-        sobol_rows.extend(_compute_sobol_indices(problem, name, Y, sa_cfg))
+    for (resp, param), group in seed_sobol_df.groupby(["response", "parameter"]):
+        s1_vals = group["S1"].values
+        st_vals = group["ST"].values
+        n = len(s1_vals)
+        if n < 2:
+            print(f"  {resp}/{param}: only {n} seed(s) — setting CI to 0")
+            s1_conf, st_conf = 0.0, 0.0
+        else:
+            t_val = t_dist.ppf(0.975, n - 1)
+            s1_conf = float(t_val * np.std(s1_vals, ddof=1) / np.sqrt(n))
+            st_conf = float(t_val * np.std(st_vals, ddof=1) / np.sqrt(n))
+        sobol_rows.append({
+            "response": resp,
+            "parameter": param,
+            "S1": float(np.mean(s1_vals)),
+            "S1_conf": s1_conf,
+            "ST": float(np.mean(st_vals)),
+            "ST_conf": st_conf,
+        })
 
     sobol_df = pd.DataFrame(sobol_rows)
     sobol_path = os.path.join(out_dir, "sobol_indices.csv")
