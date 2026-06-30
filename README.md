@@ -103,7 +103,7 @@ The analysis is configured in `code/settings/sensitivity_config.yaml` — choose
 
 ## Figures
 
-Publication-quality figures are generated from Jupyter notebooks in `code/plotting/`:
+Figures are generated from Jupyter notebooks in `code/plotting/`:
 
 | Notebook | Generates |
 |---|---|
