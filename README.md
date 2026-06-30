@@ -18,7 +18,7 @@ A detailed description of all model parameters, their calibration sources, and s
 │   ├── core/             #   Model logic: agents, markets, credit, expectations
 │   ├── settings/         #   Config, metrics, policies, sensitivity config
 │   ├── sensitivity/      #   Sobol global sensitivity analysis (generate / evaluate / aggregate)
-│   ├── plotting/         #   Jupyter notebooks for publication figures
+│   ├── plotting/         #   Jupyter notebooks for figures and an interactive dashboard
 │   ├── test/             #   Unit and regression tests (unittest)
 │   ├── run.py            #   CLI entry point for single model runs
 │   └── policy_analysis.py #   Multi-seed policy experiment runner
