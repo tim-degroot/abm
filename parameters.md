@@ -37,7 +37,7 @@ Parameters with no external source. Labelled "Author assumption" following the c
 
 | Parameter    | Config path          | Default | Rationale                                                                                           |
 | ------------ | -------------------- | ------- | --------------------------------------------------------------------------------------------------- |
-| Households   | `sim.n_households`   | 500     | Model scale. Chosen for tractability across 10 stochastic seeds × 8192 Sobol samples.               |
+| Households   | `sim.n_households`   | 500     | Model scale. Chosen for tractability across runs.               |
 | Institutions | `sim.n_institutions` | 5       | Arbitrary; enough to avoid single-institution monopoly without fragmenting the BTL market.          |
 | Steps        | `sim.n_steps`        | 1200    | 100 years at monthly resolution. Sufficient for shock experiments (Gamal uses 100 years post-shock). |
 | Seed         | `sim.seed`           | 42      | RNG seed for reproducibility.                                                                       |
